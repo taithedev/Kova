@@ -11,6 +11,7 @@ struct EditProfileView: View {
     @State private var avatarURL = ""
     @State private var bannerStyle = "ink"
     @State private var isPrivate = true
+    @State private var resetBanner = false
     @State private var showPublicWarning = false
     @State private var saving = false
     @State private var message: String?
@@ -82,6 +83,7 @@ struct EditProfileView: View {
                     ForEach(bannerOptions, id: \.self) { option in
                         Button {
                             bannerStyle = option
+                            resetBanner = true
                         } label: {
                             VStack(spacing: 6) {
                                 RoundedRectangle(cornerRadius: 11)
@@ -163,7 +165,7 @@ struct EditProfileView: View {
         .background(KovaTheme.background)
         .navigationTitle("Edit profile")
         .onAppear { loadDraft() }
-        .task { await loadMedia() }
+        .task { await refreshUser(); await loadMedia() }
         .onChange(of: avatarSelection) { _, selection in
             if let selection { Task { await uploadPhoto(selection, kind: "avatar") } }
         }
@@ -193,12 +195,20 @@ struct EditProfileView: View {
         bio = user.bio ?? ""
         pronouns = user.pronouns ?? ""
         bannerStyle = user.bannerStyle ?? "ink"
+        resetBanner = false
         isPrivate = user.isPrivate
         if let url = user.avatarUrl, url.hasPrefix("kova-avatar:") {
             avatarPreset = String(url.dropFirst("kova-avatar:".count))
         } else {
             avatarPreset = "mono"
             avatarURL = user.avatarUrl ?? ""
+        }
+    }
+
+    private func refreshUser() async {
+        if let fresh: KovaUser = try? await session.api.request("/api/auth/me") {
+            session.updateUser(fresh)
+            loadDraft()
         }
     }
 
@@ -245,7 +255,7 @@ struct EditProfileView: View {
                 displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines),
                 bio: bio, pronouns: pronouns, bannerStyle: bannerStyle,
                 avatarUrl: avatar.isEmpty ? "kova-avatar:" + avatarPreset : avatar,
-                isPrivate: isPrivate
+                isPrivate: isPrivate, resetBanner: resetBanner
             ))
             let updated: KovaUser = try await session.api.request("/api/users/me", method: "PATCH", json: payload)
             session.updateUser(updated)
@@ -262,4 +272,5 @@ private struct EditProfilePayload: Encodable {
     let bannerStyle: String
     let avatarUrl: String
     let isPrivate: Bool
+    let resetBanner: Bool
 }

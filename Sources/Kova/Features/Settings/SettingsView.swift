@@ -76,8 +76,19 @@ struct SettingsView: View {
                         NavigationLink { ModerationView() } label: {
                             Label("Moderation queue", systemImage: "checkmark.shield")
                         }
+                        NavigationLink { StaffSupportView() } label: {
+                            Label("Support ticket queue", systemImage: "bubble.left.and.bubble.right")
+                        }
+                        NavigationLink { StaffMediaReviewView() } label: {
+                            Label("Review profile photos", systemImage: "photo.badge.checkmark")
+                        }
                         NavigationLink { StaffDashboardView() } label: {
                             Label("Staff dashboard", systemImage: "shield.lefthalf.filled")
+                        }
+                    }
+                    if role == "owner" {
+                        NavigationLink { OwnerConsoleView() } label: {
+                            Label("Owner console", systemImage: "chart.pie.xaxis")
                         }
                     }
                     if role == "owner" || role == "developer" {
@@ -85,6 +96,14 @@ struct SettingsView: View {
                             Label("Creator studio", systemImage: "chart.bar.xaxis")
                         }
                     }
+                }
+            }
+            Section("HELP & CONTACT") {
+                NavigationLink { SupportCenterView() } label: {
+                    Label("Support tickets", systemImage: "lifepreserver")
+                }
+                NavigationLink { PrivateContactsView() } label: {
+                    Label("Optional email and phone", systemImage: "envelope.badge.shield.half.filled")
                 }
             }
             Section("PLAYBACK") {

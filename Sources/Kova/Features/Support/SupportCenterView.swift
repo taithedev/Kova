@@ -255,7 +255,7 @@ struct SupportTicketThreadView: View {
         defer { sending = false }
         do {
             let body = try session.api.encode(KovaTicketReply(message: reply))
-            let _: KovaTicketCreateResult = try await session.api.request("/api/support/tickets/\(id)", method: "POST", json: body)
+            let _: OkResponse = try await session.api.request("/api/support/tickets/\(id)", method: "POST", json: body)
             reply = ""
             await load()
         } catch { errorMessage = error.localizedDescription }
