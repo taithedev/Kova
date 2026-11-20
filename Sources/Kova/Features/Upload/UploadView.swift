@@ -248,9 +248,10 @@ struct UploadView: View {
                 }
             }
             .sheet(item: $editing) { source in
-                KovaEditorView(input: source) { output in
+                KovaEditorView(input: source) { output, soundCredit in
                     selectedURL = output
-                    message = "Video edited successfully. You can publish it now."
+                    musicTitle = soundCredit
+                    message = "Video edited successfully with " + soundCredit + "."
                 }
             }
             .onChange(of: selected) { _, new in
