@@ -1,5 +1,16 @@
 # Kova release history
 
+## 0.5.0 — Native tabs, media, support and accent colors
+
+- Removed double navigation bar; use the single native Liquid Glass TabView on iOS 26.
+- Added seven accent palettes to Light, Dark, OLED and System appearance.
+- Added custom photo uploads, reviewed banner images and GIF banners gated at more than 500 real followers.
+- Added server-side media review queue, encrypted optional email/phone contacts and support tickets.
+- Added owner analytics for real engagement, staff action audit history and ticket moderation.
+- Added improved feed scroll snapping and selection haptics.
+- Kept verification and account-role assignment server-enforced, not exposed to ordinary users.
+- No fake followers, bot accounts or AI functionality.
+
 ## 0.4.0 — Liquid Glass profiles and human-first social
 
 - Built with an iOS 26 SDK for native Liquid Glass tab navigation and panels, with translucent fallback for older supported iOS versions.

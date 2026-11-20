@@ -12,10 +12,10 @@ struct FeedView:View {
                 KovaTheme.background.ignoresSafeArea()
                 if model.videos.isEmpty && model.isLoading {LoadingPanel(label:"Opening Kova")} else if model.videos.isEmpty {
                     VStack(spacing:16) {
-                        EmptyState(icon:"play.square.stack",title:"No published videos yet",detail:session.isPreviewing ? "Preview clips are sample cards." : "Your feed will show approved videos from Kova creators.")
+                        EmptyState(icon:"play.square.stack",title:"No published videos yet",detail:"New approved videos from real creators will appear here.")
                         Button("Refresh feed") {
                             Task { await model.load(api:session.api,preview:session.isPreviewing) }
-                        }.font(.system(size:14,weight:.semibold)).foregroundStyle(.white)
+                        }.font(.system(size:14,weight:.semibold)).foregroundStyle(KovaTheme.accent)
                     }
                 } else {
                     ScrollView(.vertical) {
@@ -42,7 +42,11 @@ struct FeedView:View {
                             }
                         }.scrollTargetLayout()
                     }
-                    .scrollIndicators(.hidden).scrollTargetBehavior(.paging).scrollPosition(id:$activeID)
+                    .scrollIndicators(.hidden)
+                    .scrollTargetBehavior(.paging)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollPosition(id:$activeID)
+                    .sensoryFeedback(.selection, trigger:activeID)
                     .refreshable {
                         activeID=nil
                         await model.load(api:session.api,preview:session.isPreviewing)
@@ -55,7 +59,7 @@ struct FeedView:View {
                     Button("For You"){changeMode("for-you")}.foregroundStyle(model.mode=="for-you" ? .white : KovaTheme.muted)
                 }
                 .font(.system(size:16,weight:.bold)).padding(12)
-                .background(.black.opacity(0.26),in:Capsule())
+                .background(.ultraThinMaterial,in:Capsule())
                 .padding(.top,10)
                 if session.isPreviewing {VStack{Spacer();Text("BROWSING AS A GUEST").font(.caption2).bold().padding(8).background(.black.opacity(0.5),in:Capsule()).padding(.bottom,12)}}
             }

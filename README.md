@@ -1,31 +1,19 @@
 # Kova — native iPhone social video app
 
-## v0.4.0 — Liquid Glass and real profiles
+## Kova 0.5.0 — Native tab bar, accent colors, profiles, support
 
-This release improves the app's native design with a four-mode appearance selector (System, Light, Dark, OLED Black), genuine iOS 26 Liquid Glass where available, custom profile banners, preset avatars and optional externally hosted HTTPS profile photos. Black-and-white controls are consistent; user videos and profile colors remain colorful.
+**System navigation:** removed the duplicate handcrafted bottom bar. SwiftUI TabView now owns the single, native iOS 26 Liquid Glass tab bar. On iOS 17–25 it uses the standard system tab bar. Paging video feed has native snapping, sensible bounce and selection haptics.
 
-### Account experience
-- Username/password sign-in via Neon Managed Better Auth; no server URL to configure.
-- Age 13+ signup. All new accounts are **private by default**. Users may deliberately switch to public through Edit Profile with a privacy warning.
-- Display name, bio, optional pronouns, verified blue checkmark (issued by staff only), banner presets, avatars, follower counts, and a three-column video gallery.
-- Public Explore searches real accounts and approved public posts. Guest browsing does not create fake users or show fabricated video cards.
+**Appearance:** grayscale UI with optional Classic, Ocean, Violet, Mint, Rose, Amber and Sky accent colors. Users can choose System, Light, Dark or OLED Black. Video content and custom media are not artificially recolored.
 
-### Real permissions
-- **Owner**: staff dashboard, creator studio, approve/remove verification, assign developer/moderator/admin roles.
-- **Admin**: staff dashboard, moderation queue, approve/remove verification on permitted accounts.
-- **Moderator**: content review queue, reports, and moderation stats.
-- **Developer**: developer label and creator studio with personal video/follower/like stats.
-- **Verified user**: blue checkmark on feed, profile and discovery. Verified status does not grant staff rights.
+**Profiles:** everyone starts private at sign-up, with an explicit public-account opt-in. Users can select personalized color banners, curated avatars or upload JPEG profile photos and banners via PhotosPicker. GIF banners unlock **above 500 accepted real followers**. Uploaded profile media must be approved by authorized staff before appearing publicly. New banner/photo uploads strip photo metadata by JPEG re-encoding.
 
-All privileged operations are checked on the server and logged. Owner privileges do not come from entering a special username. They must be assigned to a verified existing account using a trusted database procedure. See `docs/operations/ROLES.md`.
+**Support:** users can create support tickets, follow their status and reply to staff. Staff roles can review support tickets and uploaded profile media. Optional email and phone fields are private and AES-256-GCM encrypted server-side; these are unverified contact fields and do not currently provide password recovery.
 
-### Code and distribution
-- `Sources/Kova/`: Native SwiftUI app (iOS 17+, native glass on iOS 26+).
-- `functions/kova/index.ts`: active Neon-hosted API.
-- `database/migrations/`: additive Kova PostgreSQL schemas.
-- `Assets/`: original geometric black-and-white Kova icon.
-- `.github/workflows/`: tests and macOS unsigned IPA builder, using Xcode 26 SDK.
+**Permissions:** server-side owner/admin/moderator/developer roles and verification remain access-controlled. Owner dashboard includes live platform counts, ticket queues, media review and auditable actions. Roles are not awarded based on matching a username; an authenticated Kova account must be independently proven before initial owner assignment.
 
-The built artifact is an **unsigned IPA**: sign using your own Apple credentials before sideloading. This is not a public launch and has not undergone a full real-device security, abuse, privacy, or video upload/playback test. Accounts under 13 remain disabled. Password recovery, upload scanning, media storage credentials, and staffed public moderation are still required.
+**No hidden follower fabrication:** follower numbers are computed from real accepted relationships; owner analytics distinguish real followers from staff roles. The app does not create bot accounts or provide AI-generated content.
 
-**No AI creators, AI-generated feeds, or automated account bots are built into this version.** This is not a guarantee the service is bot-free; rate limits, reporting and active moderation must be maintained.
+**Shipping:** GitHub Actions produces an unsigned iOS IPA with iOS 26 SDK. Sign it before installing. Live API auth/route tests passed; profile uploads, GIF playback, support cases, real-device QA and contact verification remain to be tested end-to-end. Never treat this release as a fully safety-reviewed public launch. Kova serves ages 13+.
+
+[Release history](CHANGELOG.md) · [Roles](docs/operations/ROLES.md) · [v0.5 details](docs/operations/RELEASE_0_5.md)
