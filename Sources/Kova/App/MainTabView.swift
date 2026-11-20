@@ -4,6 +4,7 @@ import SwiftUI
 /// The standard iOS 26 tab bar continues to use Apple's native Liquid Glass.
 struct MainTabView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var remix: KovaRemixCoordinator
     @AppStorage("kova.selectedTab") private var selected = 0
     @StateObject private var drawer = KovaNavigationState()
     @State private var route: KovaDrawerRoute?
@@ -77,6 +78,12 @@ struct MainTabView: View {
                 }
             }
             .animation(.spring(response: 0.32, dampingFraction: 0.88), value: drawer.isOpen)
+        }
+        .onChange(of: remix.intent?.id) { _, id in
+            if id != nil {
+                closeDrawer()
+                selected = 2
+            }
         }
         .sheet(item: $route) { destination in
             KovaSidebarDestination(route: destination)
