@@ -540,6 +540,7 @@ async function staffDashboard(req){
  const rows=await db()`SELECT
  (SELECT count(*)::int FROM reports WHERE status='open') AS open_reports,
  (SELECT count(*)::int FROM videos WHERE status='pending') AS pending_videos,
+ (SELECT count(*)::int FROM videos WHERE status='approved') AS live_videos,
  (SELECT count(*)::int FROM profiles WHERE disabled_at IS NULL) AS accounts,
  (SELECT count(*)::int FROM profiles WHERE is_verified=true) AS verified_accounts`;
  return json({...rows[0],role:me.role});
@@ -658,6 +659,31 @@ async function uploadProfileMedia(req){
  const key='profile-media/'+me.id+'/'+randomUUID()+'.'+ext;
  return json({key,url:await presignS3('PUT',key,600),method:'PUT',mime,max_bytes:limit});
 }
+// Verify uploaded file signatures, not just user-provided MIME metadata.
+// This is a format check, not a guarantee that user-generated content is safe.
+async function checkImageSignature(key,mime){
+ let response;
+ try{
+  response=await fetch(await presignS3('GET',key,180),{
+   headers:{Range:'bytes=0-31'},signal:AbortSignal.timeout(12000)});
+ }catch{throw new AppError(503,'Could not validate the uploaded image. Please retry.');}
+ if(!response.ok)throw new AppError(400,'Uploaded image could not be read');
+ const reader=response.body?.getReader();
+ if(!reader)throw new AppError(503,'Image validation is temporarily unavailable');
+ const {value}=await reader.read();
+ await reader.cancel().catch(()=>{});
+ const bytes=value||new Uint8Array();
+ const ascii=(lo,hi)=>String.fromCharCode(...bytes.slice(lo,hi));
+ let okay=false;
+ if(mime==='image/jpeg')okay=bytes.length>=3&&bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff;
+ if(mime==='image/png')okay=bytes.length>=8&&
+  [137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v);
+ if(mime==='image/gif')okay=bytes.length>=6&&
+  ['GIF87a','GIF89a'].includes(ascii(0,6));
+ if(mime==='image/webp')okay=bytes.length>=12&&
+  ascii(0,4)==='RIFF'&&ascii(8,12)==='WEBP';
+ if(!okay)throw new AppError(400,'The uploaded image format does not match its file type');
+}
 async function completeProfileMedia(req){
  const me=await viewer(req);
  const b=await parseBody(req),kind=String(b.kind||''),key=String(b.key||'');
@@ -677,6 +703,7 @@ async function completeProfileMedia(req){
  if(bytes<1||bytes>(ext==='gif'?15000000:6000000))throw new AppError(400,'Image is too large');
  const contentType=String(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
  if(contentType!==mime)throw new AppError(400,'Unexpected image format');
+ await checkImageSignature(key,mime);
  const rows=await db()`INSERT INTO profile_media(owner_id,kind,object_key,mime,byte_length,status)
  VALUES(${me.id},${kind},${key},${mime},${bytes},'approved')
  ON CONFLICT(object_key) DO NOTHING RETURNING id,status`;
@@ -860,8 +887,10 @@ async function ownerOverview(req){
  (SELECT count(*)::int FROM profiles WHERE created_at>=now()-interval '7 days') AS new_accounts_week,
  (SELECT count(*)::int FROM videos WHERE status='approved') AS approved_videos,
  (SELECT count(*)::int FROM videos WHERE status='pending') AS pending_videos,
+ (SELECT count(*)::int FROM videos WHERE status='rejected') AS removed_videos,
  (SELECT count(*)::int FROM support_tickets WHERE status IN ('open','in_progress')) AS open_support,
  (SELECT count(*)::int FROM profile_media WHERE status='pending') AS pending_media,
+ (SELECT count(*)::int FROM profile_media WHERE status='approved') AS live_profile_media,
  (SELECT count(*)::int FROM reports WHERE status='open') AS open_reports,
  (SELECT count(*)::int FROM follows WHERE status='accepted') AS real_follow_relationships`;
  const events=await db()`SELECT e.id,e.action,e.subject_type,e.created_at,p.handle AS actor
