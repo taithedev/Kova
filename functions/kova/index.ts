@@ -1,7 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import { randomBytes, randomUUID, createHash } from 'node:crypto';
-import { S3Client, HeadObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { randomBytes, randomUUID, createHash, createHmac } from 'node:crypto';
 
 class AppError extends Error {
  constructor(status, message){super(message);this.status=status;}
@@ -123,18 +121,48 @@ async function logout(req){
  await db()`DELETE FROM sessions WHERE id=${who.session_id}`;
  return json({ok:true});
 }
+// Pure Node.js SigV4 signing avoids loading AWS SDK's Node HTTP transports
+// inside the Neon Function ESM worker.
 function getStorage(){
- const accessKeyId=process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID;
- const secretAccessKey=process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY;
+ const access=process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID;
+ const secret=process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY;
  const endpoint=process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT;
- if(!accessKeyId||!secretAccessKey||!endpoint)throw new AppError(503,'Video storage is not configured yet.');
  const region=process.env.AWS_REGION||process.env.S3_REGION||'us-east-1';
- return {client:new S3Client({endpoint,region,forcePathStyle:true,credentials:{accessKeyId,secretAccessKey}}),bucket:'kova-videos'};
+ if(!access||!secret||!endpoint)throw new AppError(503,'Video storage is not configured yet.');
+ let uri;
+ try {uri=new URL(endpoint);}catch{throw new AppError(503,'Video storage URL is invalid');}
+ if(uri.protocol!=='https:')throw new AppError(503,'Video storage requires HTTPS');
+ return {access,secret,uri,region,bucket:'kova-videos'};
 }
-async function readVideo(key){
- const {client,bucket}=getStorage();
- return getSignedUrl(client,new GetObjectCommand({Bucket:bucket,Key:key}),{expiresIn:900});
+const uriEncode=s=>encodeURIComponent(s).replace(/[!'()*]/g,ch=>'%'+ch.charCodeAt(0).toString(16).toUpperCase());
+const hmac=(key,data)=>createHmac('sha256',key).update(data).digest();
+async function presignS3(method,key,seconds=600){
+ const cfg=getStorage();
+ const now=new Date().toISOString().replace(/[:-]|\.\d{3}/g,'');
+ const day=now.slice(0,8);
+ const scope=day+'/'+cfg.region+'/s3/aws4_request';
+ const path=cfg.uri.pathname.replace(/\/$/,'')+'/'+cfg.bucket+'/'+key.split('/').map(uriEncode).join('/');
+ const params=[
+ ['X-Amz-Algorithm','AWS4-HMAC-SHA256'],
+ ['X-Amz-Credential',cfg.access+'/'+scope],
+ ['X-Amz-Date',now],
+ ['X-Amz-Expires',String(seconds)],
+ ['X-Amz-SignedHeaders','host']
+ ];
+ const sessionToken=process.env.AWS_SESSION_TOKEN;
+ if(sessionToken)params.push(['X-Amz-Security-Token',sessionToken]);
+ const canonicalQuery=params.map(([k,v])=>uriEncode(k)+'='+uriEncode(v)).sort().join('&');
+ const canonical=method+'\n'+path+'\n'+canonicalQuery+'\nhost:'+cfg.uri.host.toLowerCase()+'\n\nhost\nUNSIGNED-PAYLOAD';
+ const hash=createHash('sha256').update(canonical).digest('hex');
+ const text='AWS4-HMAC-SHA256\n'+now+'\n'+scope+'\n'+hash;
+ const kDate=hmac('AWS4'+cfg.secret,day);
+ const kRegion=hmac(kDate,cfg.region);
+ const kService=hmac(kRegion,'s3');
+ const signingKey=hmac(kService,'aws4_request');
+ const signature=createHmac('sha256',signingKey).update(text).digest('hex');
+ return cfg.uri.origin+path+'?'+canonicalQuery+'&X-Amz-Signature='+signature;
 }
+async function readVideo(key){return presignS3('GET',key,900);}
 async function signVideoRows(rows){
  return Promise.all(rows.map(async ({video_key,...item})=>({...item,video_url:await readVideo(String(video_key))})));
 }
@@ -389,8 +417,7 @@ async function uploadURL(req){
  const b=await parseBody(req);
  if(!['video/mp4','video/quicktime'].includes(b.mime))throw new AppError(400,'Upload MP4 or MOV video');
  const key='videos/'+me.id+'/'+randomUUID()+(b.mime==='video/mp4'?'.mp4':'.mov');
- const {client,bucket}=getStorage();
- const url=await getSignedUrl(client,new PutObjectCommand({Bucket:bucket,Key:key,ContentType:b.mime}),{expiresIn:600});
+ const url=await presignS3('PUT',key,600);
  return json({key,url,method:'PUT',mime:b.mime,expires_in_seconds:600,max_bytes:100*1024*1024});
 }
 async function postVideo(req){
@@ -404,11 +431,14 @@ async function postVideo(req){
  const duration=Number(b.duration_seconds||0);
  if(!Number.isFinite(duration)||duration<1||duration>600)throw new AppError(400,'Video must be 1–600 seconds');
  const visibility=['public','followers','private'].includes(b.visibility)?b.visibility:'private';
- const {client,bucket}=getStorage();
- let obj;
- try{obj=await client.send(new HeadObjectCommand({Bucket:bucket,Key:key}));}
- catch{throw new AppError(400,'Upload not found');}
- if(!obj.ContentLength||obj.ContentLength>100*1024*1024)throw new AppError(400,'Video exceeds 100 MB');
+ let head;
+ try{head=await fetch(await presignS3('HEAD',key,300),{method:'HEAD',signal:AbortSignal.timeout(15000)});}
+ catch{throw new AppError(503,'Cannot verify uploaded video');}
+ if(!head.ok)throw new AppError(400,'Upload not found');
+ const length=Number(head.headers.get('content-length')||0);
+ if(length<1||length>100*1024*1024)throw new AppError(400,'Video must be 1–100 MB');
+ const contentType=head.headers.get('content-type')||'';
+ if(!['video/mp4','video/quicktime'].includes(contentType))throw new AppError(400,'Unsupported video format');
  const title=String(b.music_title||'Original audio').slice(0,140);
  const rows=await db()`INSERT INTO videos(author_id,video_key,video_url,caption,duration_seconds,music_title,visibility,status)
  VALUES(${me.id},${key},'private',${caption},${duration},${title},${visibility},'pending')
