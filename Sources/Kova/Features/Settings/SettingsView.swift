@@ -71,7 +71,7 @@ struct SettingsView: View {
                 NavigationLink { NotificationsView() } label: {
                     Label("Notifications", systemImage: "bell")
                 }
-                if let role = session.user?.role {
+                if session.hasVerifiedSession, let role = session.user?.role {
                     if ["owner", "admin", "moderator"].contains(role) {
                         NavigationLink { ModerationView() } label: {
                             Label("Moderation queue", systemImage: "checkmark.shield")

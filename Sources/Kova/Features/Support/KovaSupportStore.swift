@@ -76,7 +76,7 @@ import SwiftUI
             URLQueryItem(name: "q", value: query)
         ]
         do {
-            let page: KovaTicketPage = try await api.request("/api/staff/tickets" + (parts.string ?? ""))
+            let page: KovaTicketPage = try await api.request("/api/staff/tickets" + (parts.percentEncodedQuery.map { "?" + $0 } ?? ""))
             guard account == currentAccount else { return }
             staffQueue = page.items
             lastStaffFetch = .now

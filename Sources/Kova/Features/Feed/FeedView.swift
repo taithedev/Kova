@@ -2,7 +2,8 @@ import SwiftUI
 struct FeedView:View {
     @EnvironmentObject private var session:SessionStore
     @StateObject private var model=FeedModel()
-    @State private var activeID:String?
+    @SceneStorage("kova.feed.activeVideo") private var activeID:String?
+    @SceneStorage("kova.feed.mode") private var savedMode="for-you"
     @State private var commentsVideo:KovaVideo?
     @State private var reportVideo:KovaVideo?
     @State private var needsSignIn=false
@@ -64,7 +65,10 @@ struct FeedView:View {
                 if session.isPreviewing {VStack{Spacer();Text("BROWSING AS A GUEST").font(.caption2).bold().padding(8).background(.black.opacity(0.5),in:Capsule()).padding(.bottom,12)}}
             }
         }
-        .task(id:session.user?.id){await model.load(api:session.api,preview:session.isPreviewing)}
+        .task(id:session.user?.id){
+            model.mode = savedMode
+            await model.load(api:session.api,preview:session.isPreviewing)
+        }
         .sheet(item:$commentsVideo){CommentsSheet(video:$0)}
         .sheet(item:$reportVideo){ReportSheet(targetType:"video",targetID:$0.id)}
         .alert("Sign in to interact",isPresented:$needsSignIn){Button("OK",role:.cancel) {}} message:{Text("Create a 13+ account to like, follow, save or comment.")}
@@ -72,7 +76,7 @@ struct FeedView:View {
     }
     private func changeMode(_ mode:String){
         if mode=="following" && session.user == nil {needsSignIn=true;return}
-        model.mode=mode;activeID=nil;Task{await model.load(api:session.api,preview:session.isPreviewing)}
+        model.mode=mode;savedMode=mode;activeID=nil;Task{await model.load(api:session.api,preview:session.isPreviewing)}
     }
     private func interact(_ operation:@escaping @MainActor () async -> Void){
         guard session.user != nil else {needsSignIn=true;return}

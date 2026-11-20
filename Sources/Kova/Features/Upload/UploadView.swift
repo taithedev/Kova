@@ -5,7 +5,8 @@ struct UploadView:View {
     @State private var selected:PhotosPickerItem?
     @State private var videoURL:URL?
     @State private var caption=""
-    @State private var visibility="public"
+    private var accountID: String { session.user?.id ?? "" }
+    @State private var visibility="private"
     @State private var showCamera=false
     @State private var uploading=false
     @State private var message:String?
@@ -37,13 +38,26 @@ struct UploadView:View {
                 }.padding(18)
             }.background(KovaTheme.background)
             .onChange(of:selected){_,new in Task{if let movie=try? await new?.loadTransferable(type:PickedMovie.self){videoURL=movie.url}}}
+            .task {
+                if !accountID.isEmpty {
+                    caption = KovaLocalState.draft(account: accountID, key: "video.caption")
+                    let stored = KovaLocalState.draft(account: accountID, key: "video.visibility")
+                    if ["public","followers","private"].contains(stored) { visibility = stored }
+                }
+            }
+            .onChange(of:caption){_,new in
+                if !accountID.isEmpty { KovaLocalState.setDraft(new, account: accountID, key:"video.caption") }
+            }
+            .onChange(of:visibility){_,new in
+                if !accountID.isEmpty { KovaLocalState.setDraft(new, account: accountID, key:"video.visibility") }
+            }
             .sheet(isPresented:$showCamera){CameraPicker{videoURL=$0}.ignoresSafeArea()}
         }
     }
     private func publish() async {
         guard let videoURL else{return}
         uploading=true;defer{uploading=false}
-        do{let published=try await UploadService(api:session.api).upload(file:videoURL,caption:caption,visibility:visibility);message=published.message;self.videoURL=nil;caption="";selected=nil}
+        do{let published=try await UploadService(api:session.api).upload(file:videoURL,caption:caption,visibility:visibility);message=published.message;self.videoURL=nil;caption="";selected=nil;visibility="private"}
         catch{message=error.localizedDescription}
     }
 }

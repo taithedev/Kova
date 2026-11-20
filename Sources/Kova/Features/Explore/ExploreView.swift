@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ExploreView: View {
     @EnvironmentObject private var session: SessionStore
-    @State private var query = ""
+    @SceneStorage("kova.discover.search") private var query = ""
     @State private var result = SearchResponse(users: [], videos: [])
     @State private var searching = false
     @State private var errorMessage: String?

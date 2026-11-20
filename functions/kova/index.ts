@@ -719,9 +719,10 @@ async function tickets(req,tid){
   return json({id:rows[0].id,status:'open'},201);
  }
  if(!validUUID(tid))throw new AppError(400,'Invalid ticket');
- const allowed=await db()`SELECT id,author_id,subject,category,status,priority,assigned_to,created_at,updated_at,
-   (last_staff_reply_at IS NOT NULL AND (last_user_read_at IS NULL OR last_staff_reply_at>last_user_read_at)) AS unread
-   FROM support_tickets WHERE id=${tid} AND (author_id=${me.id} OR ${staff}) LIMIT 1`;
+ const allowed=await db()`SELECT t.id,t.author_id,t.subject,t.category,t.status,t.priority,t.assigned_to,t.created_at,t.updated_at,p.handle,
+   (t.last_staff_reply_at IS NOT NULL AND (t.last_user_read_at IS NULL OR t.last_staff_reply_at>t.last_user_read_at)) AS unread
+   FROM support_tickets t JOIN profiles p ON p.id=t.author_id
+   WHERE t.id=${tid} AND (t.author_id=${me.id} OR ${staff}) LIMIT 1`;
  if(!allowed.length)throw new AppError(404,'Support ticket not found');
  if(req.method==='GET'){
   const messages=await db()`SELECT m.id,m.body,m.is_staff,m.created_at,p.display_name
