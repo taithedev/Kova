@@ -48,11 +48,11 @@ async function viewer(req,required=true){
  if(!token){if(required)throw new AppError(401,'Please sign in');return null;}
  if(token.length<20||token.length>256)throw new AppError(401,'Session expired');
  const hashed=digest(token);
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,p.role,p.is_private,p.allow_messages,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,
  s.id AS session_id,s.created_at AS session_created_at,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count
- FROM sessions s JOIN profiles p ON p.id=s.user_id
+ FROM sessions s JOIN profiles p ON p.id=s.user_id LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id
  WHERE s.token_hash=${hashed} AND s.expires_at>now() AND p.disabled_at IS NULL LIMIT 1`;
  if(!rows.length)throw new AppError(401,'Session expired. Sign in again.');
  return rows[0];
@@ -100,7 +100,7 @@ async function register(req){
  const rows=await db()`INSERT INTO profiles(handle,display_name,password_hash,age_band,is_private,allow_messages,neon_auth_id,internal_auth_email)
  VALUES(${handle},${displayName},'neon-managed-better-auth',${band},true,false,${authId},${internal})
  ON CONFLICT(handle) DO NOTHING
- RETURNING id,handle,display_name,bio,avatar_url,is_verified,age_band,role,is_private,allow_messages`;
+ RETURNING id,handle,display_name,bio,avatar_url,is_verified,age_band,role,is_private,allow_messages,banner_style,pronouns`;
  if(!rows.length)throw new AppError(409,'This username is already taken.');
  return json(await beginSession(rows[0]),201);
 }
@@ -110,8 +110,8 @@ async function login(req){
  const handle=cleanHandle(b.handle);
  const password=String(b.password||'');
  if(!validHandle(handle)||!password)throw new AppError(401,'Incorrect username or password');
- const rows=await db()`SELECT id,handle,display_name,bio,avatar_url,is_verified,age_band,role,is_private,allow_messages,internal_auth_email
- FROM profiles WHERE handle=${handle} AND disabled_at IS NULL LIMIT 1`;
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.internal_auth_email
+ FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id WHERE p.handle=${handle} AND p.disabled_at IS NULL LIMIT 1`;
  if(!rows.length || !rows[0].internal_auth_email)throw new AppError(401,'Incorrect username or password');
  await betterAuth('sign-in/email',{email:rows[0].internal_auth_email,password});
  return json(await beginSession(rows[0]));
@@ -197,7 +197,7 @@ async function search(req){
  const person=await viewer(req,false);
  const id=person?.id||'00000000-0000-0000-0000-000000000000';
  const term='%'+q+'%';
- const users=await db()`SELECT id,handle,display_name,avatar_url,is_verified FROM profiles p
+ const users=await db()`SELECT p.id,p.handle,p.display_name,p.avatar_url,p.is_verified,COALESCE(pr.role,p.role) AS role FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id
  WHERE (p.handle ILIKE ${term} OR p.display_name ILIKE ${term}) AND p.disabled_at IS NULL
  AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid))
  ORDER BY handle LIMIT 20`;
@@ -223,19 +223,33 @@ async function userMe(req){
  const name=String(b.display_name||'').trim();
  const bio=String(b.bio||'').trim();
  if(name.length<1||name.length>50||bio.length>160||typeof b.is_private!=='boolean')throw new AppError(400,'Invalid profile');
- const newPrivate=me.age_band!=='18_plus'?true:b.is_private; // Teen accounts remain private by default and cannot be made globally public in this release.
- const r=await db()`UPDATE profiles SET display_name=${name},bio=${bio},is_private=${newPrivate},updated_at=now()
- WHERE id=${me.id} RETURNING id,handle,display_name,bio,avatar_url,is_verified,age_band,role,is_private,allow_messages`;
- return json(r[0]);
+ const styles=['ink','glacier','orchid','coral','mint','sunset'];
+ const banner=String(b.banner_style ?? me.banner_style ?? 'ink');
+ if(!styles.includes(banner))throw new AppError(400,'Select a valid banner style');
+ const pronouns=String(b.pronouns ?? me.pronouns ?? '').trim();
+ if(pronouns.length>32)throw new AppError(400,'Pronouns must be 32 characters or shorter');
+ const input=b.avatar_url===undefined?me.avatar_url:b.avatar_url;
+ let avatar=null;
+ if(input!==null && String(input).trim()){
+  const raw=String(input).trim();
+  if(raw.length>512)throw new AppError(400,'Avatar URL is too long');
+  try{const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||!u.hostname.includes('.')||u.port)throw Error('Invalid');avatar=u.toString();}
+  catch{throw new AppError(400,'Profile photo must be a valid HTTPS image link');}
+ }
+ const result=await db()`UPDATE profiles SET display_name=${name},bio=${bio},is_private=${b.is_private},
+ avatar_url=${avatar},banner_style=${banner},pronouns=${pronouns},updated_at=now()
+ WHERE id=${me.id}
+ RETURNING id,handle,display_name,bio,avatar_url,is_verified,age_band,role,is_private,allow_messages,banner_style,pronouns`;
+ return json({...result[0],role:me.role});
 }
 async function profile(req,handle){
  const who=await viewer(req,false);
  const id=who?.id||'00000000-0000-0000-0000-000000000000';
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.is_private,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.is_private,p.banner_style,p.pronouns,COALESCE(pr.role,p.role) AS role,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count,
  EXISTS(SELECT 1 FROM follows f WHERE f.following_id=p.id AND f.follower_id=${id}::uuid AND f.status='accepted') AS is_following
- FROM profiles p WHERE p.handle=${handle} AND p.disabled_at IS NULL
+ FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id WHERE p.handle=${handle} AND p.disabled_at IS NULL
  AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid)) LIMIT 1`;
  if(!rows.length)throw new AppError(404,'User not found');
  const p=rows[0];
@@ -404,7 +418,7 @@ async function reports(req){
 }
 async function moderation(req,videoId){
  const me=await viewer(req);
- if(!['moderator','admin'].includes(me.role))throw new AppError(403,'Moderator access required');
+ if(!['moderator','admin','owner'].includes(me.role))throw new AppError(403,'Moderator access required');
  if(!videoId){
  const rows=await db()`SELECT v.id,v.caption,v.video_key,v.created_at,p.handle
  FROM videos v JOIN profiles p ON p.id=v.author_id WHERE v.status='pending'
@@ -472,12 +486,79 @@ async function revokeOthers(req){
  const rows=await db()`DELETE FROM sessions WHERE user_id=${me.id} AND id<>${me.session_id} RETURNING id`;
  return json({revoked:rows.length});
 }
+async function staffDashboard(req){
+ const me=await viewer(req);
+ if(!['moderator','admin','owner'].includes(me.role))throw new AppError(403,'Staff access required');
+ const rows=await db()`SELECT
+ (SELECT count(*)::int FROM reports WHERE status='open') AS open_reports,
+ (SELECT count(*)::int FROM videos WHERE status='pending') AS pending_videos,
+ (SELECT count(*)::int FROM profiles WHERE disabled_at IS NULL) AS accounts,
+ (SELECT count(*)::int FROM profiles WHERE is_verified=true) AS verified_accounts`;
+ return json({...rows[0],role:me.role});
+}
+async function developerOverview(req){
+ const me=await viewer(req);
+ if(!['developer','owner'].includes(me.role))throw new AppError(403,'Developer access required');
+ const rows=await db()`SELECT
+ (SELECT count(*)::int FROM videos WHERE author_id=${me.id} AND status='approved') AS published_videos,
+ (SELECT count(*)::int FROM videos WHERE author_id=${me.id} AND status='pending') AS pending_videos,
+ (SELECT count(*)::int FROM follows WHERE following_id=${me.id} AND status='accepted') AS followers,
+ (SELECT count(*)::int FROM likes l JOIN videos v ON l.video_id=v.id WHERE v.author_id=${me.id}) AS total_likes`;
+ return json({...rows[0],role:me.role,features:['creator_analytics','developer_badge','early_feedback']});
+}
+async function staffUsers(req){
+ const me=await viewer(req);
+ if(!['owner','admin'].includes(me.role))throw new AppError(403,'Administrator access required');
+ const q=(new URL(req.url).searchParams.get('q')||'').trim().slice(0,35);
+ if(q.length<2)return json({items:[]});
+ const term='%'+q+'%';
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.is_verified,COALESCE(r.role,p.role) AS role
+ FROM profiles p LEFT JOIN profile_staff_roles r ON r.profile_id=p.id
+ WHERE (p.handle ILIKE ${term} OR p.display_name ILIKE ${term}) AND p.disabled_at IS NULL
+ ORDER BY p.handle LIMIT 30`;
+ return json({items:rows});
+}
+async function staffChange(req,handle,action){
+ const me=await viewer(req);
+ if(action==='verification'&&!['admin','owner'].includes(me.role))throw new AppError(403,'Verification permission required');
+ if(action==='role'&&me.role!=='owner')throw new AppError(403,'Only owners can assign staff roles');
+ const targets=await db()`SELECT p.id,p.is_verified,COALESCE(r.role,p.role) AS role
+ FROM profiles p LEFT JOIN profile_staff_roles r ON r.profile_id=p.id
+ WHERE p.handle=${handle} AND p.disabled_at IS NULL LIMIT 1`;
+ if(!targets.length)throw new AppError(404,'Account not found');
+ const target=targets[0];
+ if(target.role==='owner')throw new AppError(403,'Owner accounts cannot be modified here');
+ if(me.id===target.id)throw new AppError(403,'You cannot change your own verification or role');
+ const b=await parseBody(req);
+ if(action==='verification'){
+  if(typeof b.is_verified!=='boolean')throw new AppError(400,'Verification must be true or false');
+  const updated=await db()`UPDATE profiles SET is_verified=${b.is_verified},updated_at=now()
+  WHERE id=${target.id} RETURNING handle,is_verified`;
+  await db()`INSERT INTO profile_staff_audit(actor_id,target_id,action,old_value,new_value)
+  VALUES(${me.id},${target.id},'verification',${String(target.is_verified)},${String(b.is_verified)})`;
+  return json(updated[0]);
+ }
+ const permitted=['member','developer','moderator','admin'];
+ if(!permitted.includes(b.role))throw new AppError(400,'Invalid staff role');
+ const role=b.role;
+ if(role==='member'){
+  await db()`DELETE FROM profile_staff_roles WHERE profile_id=${target.id}`;
+ }else{
+  await db()`INSERT INTO profile_staff_roles(profile_id,role,granted_by)
+  VALUES(${target.id},${role},${me.id})
+  ON CONFLICT (profile_id) DO UPDATE SET role=excluded.role,granted_by=excluded.granted_by,granted_at=now()`;
+ }
+ await db()`INSERT INTO profile_staff_audit(actor_id,target_id,action,old_value,new_value)
+ VALUES(${me.id},${target.id},'role',${target.role},${role})`;
+ return json({handle,role});
+}
+
 async function handle(req){
  const url=new URL(req.url);
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
  const method=req.method.toUpperCase();
  if(method==='GET'&&(pathname==='/'||pathname==='/api/health'))
- return json({service:'kova-api',status:'ok',version:'0.3.1',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
+ return json({service:'kova-api',status:'ok',version:'0.4.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
  if(method==='GET'&&pathname==='/api/health/db'){await db()`SELECT 1`;return json({status:'connected'});}
  if(method==='GET'&&pathname==='/api/auth/username-available'){
   const h=cleanHandle(url.searchParams.get('handle'));if(!validHandle(h))return json({available:false,reason:'invalid'});
@@ -490,6 +571,13 @@ async function handle(req){
  if(method==='POST'&&pathname==='/api/auth/logout')return logout(req);
  if(method==='GET'&&pathname==='/api/auth/sessions')return recentAccounts(req);
  if(method==='POST'&&pathname==='/api/auth/sessions/revoke-others')return revokeOthers(req);
+ if(method==='GET'&&pathname==='/api/staff/dashboard')return staffDashboard(req);
+ if(method==='GET'&&pathname==='/api/staff/users')return staffUsers(req);
+ if(method==='GET'&&pathname==='/api/developer/overview')return developerOverview(req);
+ const verifiedPath=pathname.match(/^\/api\/staff\/users\/([a-z0-9_]{3,25})\/verification$/);
+ if(method==='PATCH'&&verifiedPath)return staffChange(req,verifiedPath[1],'verification');
+ const rolePath=pathname.match(/^\/api\/staff\/users\/([a-z0-9_]{3,25})\/role$/);
+ if(method==='PATCH'&&rolePath)return staffChange(req,rolePath[1],'role');
  if(method==='GET'&&pathname==='/api/feed')return feed(req);
  if(method==='GET'&&pathname==='/api/search')return search(req);
  if(method==='GET'&&pathname==='/api/users/me/stats')return accountStats(req);
