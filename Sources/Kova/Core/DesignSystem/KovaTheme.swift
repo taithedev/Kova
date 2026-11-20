@@ -3,6 +3,7 @@ import UIKit
 
 /// Black/white controls; creator media and profile banners keep their color.
 enum KovaTheme {
+    static var accent: Color { KovaAccent.color(for: UserDefaults.standard.string(forKey: "kova.accent") ?? "classic") }
     static var appearance: String { UserDefaults.standard.string(forKey: "kova.appearance") ?? "dark" }
     private static func adaptive(_ light: UIColor, _ dark: UIColor, oled: UIColor? = nil) -> Color {
         let mode = appearance
