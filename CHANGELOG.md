@@ -1,5 +1,11 @@
 # Kova release history
 
+## 0.2.1 — In-app server connection
+
+- Configure the public HTTPS Kova API origin inside the sign-in screen; no Swift rebuild required after hosting.
+- Keep video uploads private on Neon Storage; approved videos use expiring signed playback links.
+- Compiled unsigned iOS binary through GitHub Actions. Public hosting and device testing are still pending.
+
 ## 0.2.0 — Monochrome
 
 - Redesigned the native UI with a strict black-and-white interface: new handcrafted K mark, welcome flow, custom navigation, buttons, avatar surfaces, action controls, demo cards, inbox and settings.

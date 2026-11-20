@@ -32,8 +32,13 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section("SERVER") {
+                LabeledContent("API",value:AppConfig.isConfigured ? (AppConfig.apiBaseURL.host ?? "Unknown") : "Not configured")
+                Text("To change the server, sign out and connect a new HTTPS API on the sign-in screen.")
+                    .font(.footnote).foregroundStyle(KovaTheme.muted)
+            }
             Section("ABOUT") {
-                LabeledContent("Version", value: "0.2.0")
+                LabeledContent("Version", value: "0.2.1")
                 Text("No harassment, bullying, spam, or sharing someone else's personal information. Report unsafe content.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }

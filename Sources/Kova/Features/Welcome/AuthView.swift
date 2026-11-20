@@ -6,6 +6,9 @@ struct AuthView:View {
     @State private var handle=""
     @State private var displayName=""
     @State private var password=""
+    @State private var serverURL=""
+    @State private var serverMessage:String?
+    @State private var hasServer=AppConfig.isConfigured
     @State private var birthDate=Date.now
     private var dateFormat:DateFormatter { let f=DateFormatter(); f.dateFormat="yyyy-MM-dd";f.timeZone=TimeZone(secondsFromGMT:0);return f }
     var body:some View {
@@ -20,8 +23,29 @@ struct AuthView:View {
                         VStack(alignment:.leading,spacing:8){Text("Date of birth").font(.footnote).foregroundStyle(KovaTheme.muted);DatePicker("Birthday",selection:$birthDate,in:...Date.now,displayedComponents:.date).datePickerStyle(.compact)}
                     }
                     labeledField("Password") {SecureField("At least 10 characters",text:$password)}
-                    if !AppConfig.isConfigured {
-                        Label("Connect an API deployment in AppConfig.swift before registering.",systemImage:"network.slash").font(.footnote).foregroundStyle(.orange)
+                    if !hasServer {
+                        VStack(alignment:.leading,spacing:9) {
+                            Label("Connect your Kova API",systemImage:"network")
+                                .font(.system(size:14,weight:.semibold))
+                            TextField("https://your-kova-api.vercel.app",text:$serverURL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                                .padding(13)
+                                .background(KovaTheme.panel,in:RoundedRectangle(cornerRadius:12))
+                            Button("Save HTTPS server") {
+                                hasServer=AppConfig.configure(serverURL)
+                                serverMessage=hasServer ? "Saved. Sign in to continue." : "Enter a valid HTTPS root URL."
+                            }
+                            .font(.system(size:14,weight:.bold)).foregroundStyle(.white)
+                            if let serverMessage {
+                                Text(serverMessage).font(.caption).foregroundStyle(KovaTheme.muted)
+                            }
+                        }
+                    } else {
+                        Label("API: " + (AppConfig.apiBaseURL.host ?? "Connected"),
+                              systemImage:"checkmark.circle")
+                            .font(.caption).foregroundStyle(KovaTheme.muted)
                     }
                     GradientButton(signUp ? "Create account" : "Sign in",icon:"arrow.right") {
                         Task {
@@ -29,7 +53,7 @@ struct AuthView:View {
                             else {await session.signIn(handle:handle,password:password)}
                             if session.user != nil {dismiss()}
                         }
-                    }.disabled(session.isBusy || !AppConfig.isConfigured)
+                    }.disabled(session.isBusy || !hasServer)
                     if session.isBusy {ProgressView().frame(maxWidth:.infinity)}
                     Button(signUp ? "Already have an account? Sign in" : "New here? Create an account") {signUp.toggle()}
                         .frame(maxWidth:.infinity).foregroundStyle(KovaTheme.lavender).padding(.top,5)
