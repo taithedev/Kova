@@ -116,7 +116,7 @@ struct SettingsView: View {
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
             Section("ABOUT") {
-                LabeledContent("Version", value: "0.5.0")
+                LabeledContent("Version", value: "0.6.0")
                 Text("Kova is made for people. No automated follows, bots, or generated-content feeds.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }

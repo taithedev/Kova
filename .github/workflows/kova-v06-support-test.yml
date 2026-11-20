@@ -1,0 +1,60 @@
+name: Verify Kova 0.6 Support and App State
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kova-v06-support-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source contracts without creating accounts
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const file=p=>readFileSync(p,'utf8');
+          const ticket=file('functions/kova/index.ts');
+          const tab=file('Sources/Kova/App/MainTabView.swift');
+          const session=file('Sources/Kova/Core/Auth/SessionStore.swift');
+          const screen=file('Sources/Kova/Features/Support/SupportCenterView.swift');
+          assert.match(ticket,/last_staff_read_at/);
+          assert.match(ticket,/support_ticket_events/);
+          assert.match(ticket,/ticket_id/);
+          assert.match(ticket,/Invalid support priority/);
+          assert.match(ticket,/author_id=\$\{me.id\} OR \$\{staff\}/);
+          assert.match(tab,/@AppStorage\("kova.selectedTab"\)/);
+          assert.match(session,/KovaLocalState\.cachedUser/);
+          assert.match(session,/refreshIfNeeded/);
+          assert.match(screen,/KovaLocalState\.setDraft/);
+          assert.match(screen,/Search your tickets/);
+          console.log('PASS: support v2 authorization and persistence contracts');
+          JS
+      - name: Verify production API endpoints require authentication
+        env:
+          BASE_URL: https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech
+        run: |
+          node --input-type=module <<'JS'
+          const base=process.env.BASE_URL;
+          async function expect(path,status,method='GET',body){
+            const r=await fetch(base+path,{method,headers:body?{'content-type':'application/json'}:{},
+              body:body?JSON.stringify(body):undefined,redirect:'manual'});
+            console.log(method,path,r.status);
+            if(r.status!==status)throw Error(path+': expected '+status+', got '+r.status);
+            return await r.json().catch(()=>({}));
+          }
+          const h=await expect('/api/health',200);
+          if(h.data?.version!=='0.6.0')throw Error('Stale support API');
+          await expect('/api/health/db',200);
+          await expect('/api/support/tickets',401);
+          await expect('/api/support/tickets',401,'POST',{category:'account',subject:'Testing help',message:'Private smoke test'});
+          await expect('/api/staff/tickets?status=open&category=safety',401);
+          await expect('/api/staff/tickets/00000000-0000-0000-0000-000000000000/priority',401,'PATCH',{priority:'urgent'});
+          await expect('/api/notifications',401);
+          console.log('PASS: production API alive, protected ticket routes reject anonymous clients');
+          JS

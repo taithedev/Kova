@@ -1,5 +1,16 @@
 # Kova release history
 
+## 0.6.0 — Support 2.0 and resume exactly where you left off
+
+- Persisted selected tab across launches, remembered Explore search, Home feed mode/video position and Upload caption/visibility.
+- Added account-scoped device-protected ticket drafts and reply drafts; returning to Kova doesn't discard them.
+- Cached support lists and conversations to prevent repeated loading when navigating between app tabs.
+- Preserved last signed-in profile while reconnecting after a temporary outage, with server revalidation of staff permissions.
+- Added searchable support tickets, unread status, active/resolved filters, ticket numbers, message history, staff priority handling and audit trail.
+- Support notifications now link directly to the relevant ticket. Safety tickets receive higher review priority.
+- Existing Neon tickets, accounts and messages retained; no destructive migrations.
+- No AI agents or fake support users added.
+
 ## 0.5.0 — Native tabs, media, support and accent colors
 
 - Removed double navigation bar; use the single native Liquid Glass TabView on iOS 26.

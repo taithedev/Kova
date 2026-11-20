@@ -1,6 +1,20 @@
 # Kova — native iPhone social video app
 
-## Kova 0.5.0 — Native tab bar, accent colors, profiles, support
+## Kova 0.6.0 — Persistent app state and Support 2.0
+
+**Switch apps without losing your place:** The selected tab persists across app switches and relaunches. Home remembers the selected feed mode and video position; Discover remembers your search. Kova caches account data to avoid a blank sign-in screen during temporary connectivity loss, while still validating login with the live server. Foregrounding quietly refreshes your session when needed without replacing the main navigation view.
+
+**Saved drafts:** New support ticket subjects, categories, and message drafts are saved locally per account. Ticket replies keep unsent text. Upload captions and visibility preferences are remembered as well. On-device files use iOS file protection and aren't included in iCloud backups; sent ticket conversations persist in Neon. Selected video files may still need to be reselected after a force quit.
+
+**Support 2.0:** Searchable personal ticket list, unread message indicators, active/resolved filters, clearer message threads, ticket IDs, priority queue for safety issues, status activity history, staff-only status/priority tools, queue search and category filters, support reply notifications that open the correct ticket, and fast cached ticket navigation.
+
+**No fake support or automatic bot replies.** Support tickets are stored, private and reviewed by people. A support ticket is not an instant emergency service.
+
+**Verification:** A Kova ticket exists under the @taithedev account. Owner permissions remain unchanged pending privileged account-role assignment; a ticket by itself does not override account authorization.
+
+**Build:** iOS 17+ native SwiftUI (Apple native Liquid Glass appearance on iOS 26+). Releases are unsigned IPA builds and need signing before installation. Full device QA and end-to-end support staff operations remain necessary.
+
+## v0.5.0 — Native tab bar, accent colors, profiles, support
 
 **System navigation:** removed the duplicate handcrafted bottom bar. SwiftUI TabView now owns the single, native iOS 26 Liquid Glass tab bar. On iOS 17–25 it uses the standard system tab bar. Paging video feed has native snapping, sensible bounce and selection haptics.
 
