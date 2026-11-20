@@ -4,7 +4,7 @@ struct GlassPanel<Content: View>: View {
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
         content.padding(18)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius:22).stroke(.white.opacity(0.09)))
+            .background(KovaTheme.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(KovaTheme.border, lineWidth: 1))
     }
 }
