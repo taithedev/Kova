@@ -4,7 +4,7 @@ import AVKit
 struct ModerationView: View {
     @EnvironmentObject private var session: SessionStore
     @State private var queue: ModerationQueue?
-    @State private var error: String?
+    @State private var errorMessage: String?
     @State private var busy = false
     @State private var reportFilter = true
     @State private var preview: ModerationVideo?
@@ -52,8 +52,8 @@ struct ModerationView: View {
                 Text("Removing a video hides it from public discovery and creator profiles. Decisions are recorded in the staff audit log, and the creator is notified. Reports can be resolved or dismissed.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
-            if let error {
-                Section { Text(error).font(.footnote).foregroundStyle(KovaTheme.muted) }
+            if let errorMessage {
+                Section { Text(errorMessage).font(.footnote).foregroundStyle(KovaTheme.muted) }
             }
         }
         .navigationTitle("Moderation")
@@ -194,8 +194,8 @@ struct ModerationView: View {
     private func load() async {
         do {
             queue = try await session.api.request("/api/moderation/queue")
-            error = nil
-        } catch { error = error.localizedDescription }
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
     }
     private func decide(_ id: String, status: String) async {
         guard !busy else { return }
@@ -207,7 +207,7 @@ struct ModerationView: View {
             let _: VideoModerationResult = try await session.api.request(
                 "/api/moderation/videos/\(id)", method: "PATCH", json: payload)
             await load()
-        } catch { error = error.localizedDescription }
+        } catch { errorMessage = error.localizedDescription }
     }
     private func resolve(_ id: String, status: String) async {
         guard !busy else { return }
@@ -218,7 +218,7 @@ struct ModerationView: View {
             let _: VideoModerationResult = try await session.api.request(
                 "/api/moderation/reports/\(id)", method: "PATCH", json: payload)
             await load()
-        } catch { error = error.localizedDescription }
+        } catch { errorMessage = error.localizedDescription }
     }
 }
 private struct VideoModerationDecision: Encodable {
