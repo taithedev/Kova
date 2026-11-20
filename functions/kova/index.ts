@@ -67,7 +67,7 @@ async function betterAuth(action,payload){
  const base=process.env.NEON_AUTH_BASE_URL?.replace(/\/+$/,'');
  if(!base||!base.startsWith('https://'))throw new AppError(503,'Kova account service is not configured');
  let res;
- try{res=await fetch(base+'/'+action,{method:'POST',headers:{'content-type':'application/json','accept':'application/json','origin':'https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech'},body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});}
+ try{res=await fetch(base+'/'+action,{method:'POST',headers:{'content-type':'application/json','accept':'application/json','origin':'https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech'},body:JSON.stringify({...payload,callbackURL:'https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech/api/health'}),signal:AbortSignal.timeout(12000)});}
  catch{throw new AppError(503,'Account service unavailable. Please try again.');}
  let result;
  try{result=await res.json();}catch{result={};}
