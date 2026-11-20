@@ -42,7 +42,7 @@ UNSIGNED-PAYLOAD`,m=Yi("sha256").update(_).digest("hex"),v=`AWS4-HMAC-SHA256
  AND p.disabled_at IS NULL AND v.created_at>now()-interval '30 days'
  GROUP BY lower(tags.parts[1])
  ORDER BY count(*) DESC,lower(tags.parts[1]) ASC LIMIT 15`;return W({topics:e})}async function vn(o){let e=await Y(o);if(o.method==="DELETE"){let r=await M()`DELETE FROM video_not_interested WHERE user_id=${e.id} RETURNING video_id`;return W({reset:!0,cleared:r.length})}let t=await M()`SELECT count(*)::int AS hidden_count FROM video_not_interested WHERE user_id=${e.id}`;return W(t[0])}async function bn(o){let e=new URL(o.url),t=e.searchParams.get("mode")||"for-you";if(!["for-you","following"].includes(t))throw new k(400,"Invalid feed mode");let r=await Y(o,!1);if(t==="following"&&!r)throw new k(401,"Sign in for your Following feed");let n=r?.id||"00000000-0000-0000-0000-000000000000",s=Math.min(Math.max(parseInt(e.searchParams.get("cursor")||"0",10)||0,0),1e3),u=await M()`WITH candidates AS (
-  SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,v.allow_remix,v.source_video_id,v.remix_type,
+  SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,v.visibility,v.allow_remix,v.source_video_id,v.remix_type,
    p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
    (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
    (SELECT count(*)::int FROM comments co WHERE co.video_id=v.id AND co.deleted_at IS NULL) AS comments_count,
