@@ -176,6 +176,9 @@ async function signVideoRows(rows){
  ...(avatar_key ? {avatar_url:await presignS3('GET',avatar_key,900)} : {})
  })));
 }
+// Transparent, bounded ranking: recency + capped engagement, with small
+// follow signals and fairer exposure for newer creators. No watch-time or
+// sensitive-trait profiling. Members can hide posts via "Not interested".
 async function feed(req){
  const u=new URL(req.url);
  const mode=u.searchParams.get('mode')||'for-you';
@@ -184,22 +187,61 @@ async function feed(req){
  if(mode==='following'&&!person)throw new AppError(401,'Sign in for your Following feed');
  const id=person?.id||'00000000-0000-0000-0000-000000000000';
  const offset=Math.min(Math.max(parseInt(u.searchParams.get('cursor')||'0',10)||0,0),1000);
- const rows=await db()`SELECT v.id,v.caption,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,
- p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
- (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
- (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
- EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${id}::uuid) AS liked,
- EXISTS(SELECT 1 FROM bookmarks b WHERE b.video_id=v.id AND b.user_id=${id}::uuid) AS bookmarked
- FROM videos v JOIN profiles p ON p.id=v.author_id
- WHERE v.status='approved' AND p.disabled_at IS NULL
- AND ((${mode}='for-you' AND v.visibility='public' AND p.is_private=false)
- OR (${mode}='following' AND v.visibility IN ('public','followers')
- AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=${id}::uuid AND f.following_id=p.id AND f.status='accepted')))
- AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid))
- ORDER BY v.created_at DESC LIMIT 12 OFFSET ${offset}`;
- const items=await signVideoRows(rows);
- return json({items,next_cursor:rows.length===12?String(offset+12):null});
+ const rows=await db()`WITH candidates AS (
+  SELECT v.id,v.caption,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,
+   p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
+   (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
+   (SELECT count(*)::int FROM comments co WHERE co.video_id=v.id AND co.deleted_at IS NULL) AS comments_count,
+   (SELECT count(*)::int FROM video_reposts rr WHERE rr.video_id=v.id) AS reposts_count,
+   EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${id}::uuid) AS liked,
+   EXISTS(SELECT 1 FROM bookmarks b WHERE b.video_id=v.id AND b.user_id=${id}::uuid) AS bookmarked,
+   EXISTS(SELECT 1 FROM video_reposts rr WHERE rr.video_id=v.id AND rr.user_id=${id}::uuid) AS reposted,
+   EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=${id}::uuid
+     AND f.following_id=p.id AND f.status='accepted') AS already_following,
+   row_number() OVER(PARTITION BY p.id ORDER BY v.created_at DESC) AS author_slot
+  FROM videos v JOIN profiles p ON p.id=v.author_id
+  WHERE v.status='approved' AND p.disabled_at IS NULL
+   AND (
+     (${mode}='for-you' AND v.visibility='public' AND p.is_private=false)
+     OR (${mode}='following'
+       AND (v.visibility='public' AND p.is_private=false
+         OR v.visibility IN ('public','followers') AND EXISTS (
+           SELECT 1 FROM follows f WHERE f.follower_id=${id}::uuid
+           AND f.following_id=p.id AND f.status='accepted'
+         ))
+       AND (
+        EXISTS (SELECT 1 FROM follows f WHERE f.follower_id=${id}::uuid
+         AND f.following_id=p.id AND f.status='accepted')
+        OR EXISTS (SELECT 1 FROM video_reposts rr
+          JOIN follows f ON f.following_id=rr.user_id
+          WHERE rr.video_id=v.id AND f.follower_id=${id}::uuid AND f.status='accepted'
+          AND v.visibility='public' AND p.is_private=false)
+       ))
+   )
+   AND NOT EXISTS (SELECT 1 FROM video_not_interested hide
+     WHERE hide.user_id=${id}::uuid AND hide.video_id=v.id)
+   AND NOT EXISTS(SELECT 1 FROM blocks b
+     WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id)
+     OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid))
+ )
+ SELECT * FROM candidates c
+ WHERE (${mode}='following' OR author_slot<=3)
+ ORDER BY
+ CASE WHEN ${mode}='following' THEN c.created_at END DESC,
+ CASE WHEN ${mode}='for-you' THEN
+  (7.5 / (1 + GREATEST(EXTRACT(EPOCH FROM now()-c.created_at),0)/86400/3))
+  + LEAST(4.0,ln(1+c.likes_count)*0.8)
+  + LEAST(3.5,ln(1+c.comments_count)*1.15)
+  + LEAST(2.5,ln(1+c.reposts_count)*0.65)
+  + CASE WHEN c.already_following THEN 1.25 ELSE 0 END
+  - greatest(c.author_slot-1,0)*0.45
+ END DESC,
+ c.created_at DESC,md5(c.id::text || current_date::text)
+ LIMIT 12 OFFSET ${offset}`;
+ return json({items:await signVideoRows(rows),next_cursor:rows.length===12?String(offset+12):null,
+  ranking:mode==='for-you'?'freshness-community-diversity':'following-and-reposts'});
 }
+
 async function search(req){
  const u=new URL(req.url);
  const q=(u.searchParams.get('q')||'').trim().slice(0,60);
@@ -342,24 +384,57 @@ async function saved(req){
  ORDER BY b.created_at DESC LIMIT 100`;
  return json({items:await signVideoRows(rows),next_cursor:null});
 }
+// Explicit "Not interested": a signed-in viewer controls their own feed.
+async function videoPreference(req,vid){
+ const me=await viewer(req);
+ if(!validUUID(vid))throw new AppError(400,'Invalid video');
+ if(req.method==='POST'){
+  const visible=await db()`SELECT 1 FROM videos v JOIN profiles p ON p.id=v.author_id
+   WHERE v.id=${vid} AND v.status='approved' AND v.visibility='public'
+     AND p.is_private=false AND p.disabled_at IS NULL LIMIT 1`;
+  if(!visible.length)throw new AppError(404,'Video unavailable');
+  await db()`INSERT INTO video_not_interested(user_id,video_id)
+   VALUES(${me.id},${vid}) ON CONFLICT DO NOTHING`;
+ } else {
+  await db()`DELETE FROM video_not_interested WHERE user_id=${me.id} AND video_id=${vid}`;
+ }
+ return json({hidden:req.method==='POST'});
+}
 async function videoAction(req,vid,action){
  if(!validUUID(vid))throw new AppError(400,'Invalid video');
  const me=await viewer(req);
- const allowed=await db()`SELECT v.id FROM videos v JOIN profiles p ON p.id=v.author_id
+ const allowed=await db()`SELECT v.id,v.author_id,v.visibility FROM videos v JOIN profiles p ON p.id=v.author_id
  WHERE v.id=${vid} AND v.status='approved' AND (v.author_id=${me.id} OR (v.visibility='public' AND p.is_private=false)
- OR (v.visibility='followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=${me.id} AND f.following_id=p.id AND f.status='accepted')))
- AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${me.id} AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${me.id})) LIMIT 1`;
+ OR (v.visibility='followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=${me.id}
+ AND f.following_id=p.id AND f.status='accepted')))
+ AND p.disabled_at IS NULL
+ AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${me.id} AND b.blocked_id=p.id)
+ OR (b.blocker_id=p.id AND b.blocked_id=${me.id})) LIMIT 1`;
  if(!allowed.length)throw new AppError(404,'Video unavailable');
- const table=action==='like'?'likes':'bookmarks';
- if(req.method==='POST'){
-  if(table==='likes')await db()`INSERT INTO likes(user_id,video_id) VALUES(${me.id},${vid}) ON CONFLICT DO NOTHING`;
-  else await db()`INSERT INTO bookmarks(user_id,video_id) VALUES(${me.id},${vid}) ON CONFLICT DO NOTHING`;
- }else if(req.method==='DELETE'){
-  if(table==='likes')await db()`DELETE FROM likes WHERE user_id=${me.id} AND video_id=${vid}`;
-  else await db()`DELETE FROM bookmarks WHERE user_id=${me.id} AND video_id=${vid}`;
+ if(action==='repost'){
+  // Reposts redistribute PUBLIC posts only and cannot bypass private profiles.
+  const publicVideo=await db()`SELECT 1 FROM videos v JOIN profiles p ON p.id=v.author_id
+   WHERE v.id=${vid} AND v.visibility='public' AND p.is_private=false
+    AND v.status='approved' AND p.disabled_at IS NULL LIMIT 1`;
+  if(!publicVideo.length)throw new AppError(403,'Only public videos can be reposted');
+  if(req.method==='POST')await db()`INSERT INTO video_reposts(user_id,video_id)
+    VALUES(${me.id},${vid}) ON CONFLICT DO NOTHING`;
+  else await db()`DELETE FROM video_reposts WHERE user_id=${me.id} AND video_id=${vid}`;
+  const counts=await db()`SELECT count(*)::int AS count FROM video_reposts WHERE video_id=${vid}`;
+  return json({reposted:req.method==='POST',reposts_count:counts[0].count});
  }
- return json(table==='likes'?{liked:req.method==='POST'}:{bookmarked:req.method==='POST'});
+ if(action==='like'){
+  if(req.method==='POST')await db()`INSERT INTO likes(user_id,video_id)
+   VALUES(${me.id},${vid}) ON CONFLICT DO NOTHING`;
+  else await db()`DELETE FROM likes WHERE user_id=${me.id} AND video_id=${vid}`;
+  return json({liked:req.method==='POST'});
+ }
+ if(req.method==='POST')await db()`INSERT INTO bookmarks(user_id,video_id)
+  VALUES(${me.id},${vid}) ON CONFLICT DO NOTHING`;
+ else await db()`DELETE FROM bookmarks WHERE user_id=${me.id} AND video_id=${vid}`;
+ return json({bookmarked:req.method==='POST'});
 }
+
 async function comments(req,vid,cid){
  if(!validUUID(vid))throw new AppError(400,'Invalid video');
  if(cid&&req.method==='DELETE'){
@@ -907,7 +982,7 @@ async function handle(req){
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
  const method=req.method.toUpperCase();
  if(method==='GET'&&(pathname==='/'||pathname==='/api/health'))
- return json({service:'kova-api',status:'ok',version:'0.7.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
+ return json({service:'kova-api',status:'ok',version:'0.8.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
  if(method==='GET'&&pathname==='/api/health/db'){await db()`SELECT 1`;return json({status:'connected'});}
  if(method==='GET'&&pathname==='/api/auth/username-available'){
   const h=cleanHandle(url.searchParams.get('handle'));if(!validHandle(h))return json({available:false,reason:'invalid'});
@@ -967,7 +1042,9 @@ async function handle(req){
  if(moderationReport&&method==='PATCH')return resolveReport(req,moderationReport[1]);
  const cm=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/comments(?:\/([a-f0-9-]+))?$/);
  if(cm&&(method==='GET'||method==='POST'||method==='DELETE'))return comments(req,cm[1],cm[2]);
- const act=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/(like|bookmark)$/);
+ const pref=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/not-interested$/);
+ if(pref&&(method==='POST'||method==='DELETE'))return videoPreference(req,pref[1]);
+ const act=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/(like|bookmark|repost)$/);
  if(act&&(method==='POST'||method==='DELETE'))return videoAction(req,act[1],act[2]);
  const single=pathname.match(/^\/api\/videos\/([a-f0-9-]+)$/);
  if(single&&method==='DELETE')return deleteVideo(req,single[1]);
