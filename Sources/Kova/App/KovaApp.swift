@@ -3,6 +3,7 @@ import SwiftUI
 @main struct KovaApp: App {
     @StateObject private var session = SessionStore()
     @StateObject private var support = KovaSupportStore()
+    @StateObject private var updates = KovaUpdateChecker()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("kova.appearance") private var appearance = "dark"
     @AppStorage("kova.accent") private var accent = "classic"
@@ -17,11 +18,13 @@ import SwiftUI
             AppRouter()
                 .environmentObject(session)
                 .environmentObject(support)
+                .environmentObject(updates)
                 .preferredColorScheme(preferredMode)
                 .tint(KovaTheme.accent)
                 .task {
                     await session.restore()
                     support.bind(account: session.user?.id)
+                    await updates.check()
                 }
                 .onChange(of: session.user?.id) { _, currentAccount in
                     support.bind(account: currentAccount)
@@ -29,6 +32,7 @@ import SwiftUI
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         Task { await session.refreshIfNeeded() }
+                        Task { await updates.check() }
                     }
                 }
         }

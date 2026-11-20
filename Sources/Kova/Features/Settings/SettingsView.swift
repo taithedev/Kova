@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var updates: KovaUpdateChecker
     @AppStorage("kova.muteVideos") private var muteVideos = true
     @AppStorage("kova.appearance") private var appearance = "dark"
     @AppStorage("kova.accent") private var accent = "classic"
@@ -27,30 +28,34 @@ struct SettingsView: View {
                     .foregroundStyle(KovaTheme.muted)
             }
             Section("ACCENT COLOR") {
-                HStack(spacing: 10) {
-                    ForEach(KovaAccent.options, id: \.key) { option in
-                        Button {
-                            withAnimation(.snappy(duration: 0.25)) { accent = option.key }
-                        } label: {
-                            Circle()
-                                .fill(option.color)
-                                .frame(width: 31, height: 31)
-                                .overlay {
-                                    if accent == option.key {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 12, weight: .black))
-                                            .foregroundStyle(option.key == "classic" ? KovaTheme.inverted : .white)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(KovaAccent.options, id: \.key) { option in
+                            Button {
+                                withAnimation(.snappy(duration: 0.25)) { accent = option.key }
+                            } label: {
+                                Circle()
+                                    .fill(option.color)
+                                    .frame(width: 34, height: 34)
+                                    .overlay {
+                                        if accent == option.key {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 12, weight: .black))
+                                                .foregroundStyle(option.key == "classic" ?
+                                                    KovaTheme.inverted : .white)
+                                        }
                                     }
-                                }
-                                .padding(3)
-                                .overlay(Circle().stroke(accent == option.key ? KovaTheme.foreground : KovaTheme.border,
-                                                         lineWidth: accent == option.key ? 2 : 1))
+                                    .padding(4)
+                                    .overlay(Circle().stroke(
+                                        accent == option.key ? KovaTheme.foreground : KovaTheme.border,
+                                        lineWidth: accent == option.key ? 2 : 1))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Use " + option.name + " accent")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Use " + option.name + " accent")
                     }
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 6)
                 LabeledContent("Selected", value: KovaAccent.options.first(where: { $0.key == accent })?.name ?? "Classic")
                 Text("Accent colors affect selection and controls. Videos and profile media keep their original colors.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
@@ -130,8 +135,36 @@ struct SettingsView: View {
                 Text("New accounts start private. Public videos go live immediately when your account is public. Report unsafe content.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
+            Section("UPDATES") {
+                Toggle("Automatically check for updates",
+                       isOn: $updates.automaticChecks)
+                    .tint(KovaTheme.accent)
+                if let version = updates.availableVersion {
+                    Label("Kova v" + version + " available", systemImage: "arrow.down.circle")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(KovaTheme.accent)
+                    Button("Open release and installation instructions") {
+                        updates.openRelease()
+                    }
+                }
+                Button {
+                    Task { await updates.check(force: true) }
+                } label: {
+                    if updates.isChecking {
+                        Label("Checking…", systemImage: "arrow.clockwise")
+                    } else {
+                        Label("Check for updates", systemImage: "arrow.down.circle")
+                    }
+                }
+                .disabled(updates.isChecking)
+                if let message = updates.message {
+                    Text(message).font(.footnote).foregroundStyle(KovaTheme.muted)
+                }
+                Text("iOS cannot silently install an unsigned IPA. Kova notifies you of releases; you sign and install updates yourself.")
+                    .font(.footnote).foregroundStyle(KovaTheme.muted)
+            }
             Section("ABOUT") {
-                LabeledContent("Version", value: "0.8.0")
+                LabeledContent("Version", value: "0.9.0")
                 Text("Kova is made for people. No automated follows, bots, or generated-content feeds.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
