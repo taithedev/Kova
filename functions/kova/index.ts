@@ -449,21 +449,40 @@ async function ageSafety(req,handle){
 async function profile(req,handle){
  const who=await viewer(req,false);
  const id=who?.id||'00000000-0000-0000-0000-000000000000';
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.is_private,p.age_restricted,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,COALESCE(pr.role,p.role) AS role,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,
+ p.is_verified,p.is_private,p.age_restricted,p.allow_messages,p.banner_style,p.pronouns,
+ p.banner_key,p.banner_animated,COALESCE(pr.role,p.role) AS role,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count,
- EXISTS(SELECT 1 FROM follows f WHERE f.following_id=p.id AND f.follower_id=${id}::uuid AND f.status='accepted') AS is_following
- FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id WHERE p.handle=${handle} AND p.disabled_at IS NULL
- AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid)) LIMIT 1`;
+ EXISTS(SELECT 1 FROM follows f WHERE f.following_id=p.id AND f.follower_id=${id}::uuid
+ AND f.status='accepted') AS is_following
+ FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id
+ WHERE p.handle=${handle} AND p.disabled_at IS NULL
+ AND NOT EXISTS(SELECT 1 FROM blocks b WHERE
+ (b.blocker_id=${id}::uuid AND b.blocked_id=p.id)
+ OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid)) LIMIT 1`;
  if(!rows.length)throw new AppError(404,'User not found');
  const p=rows[0];
  const visible=!p.is_private||p.id===who?.id||p.is_following;
- const videos=visible?await db()`SELECT id,caption,video_key,thumbnail_url,created_at FROM videos
- WHERE author_id=${p.id} AND status='approved' AND
- (visibility='public' OR author_id=${id}::uuid OR (visibility='followers' AND ${Boolean(p.is_following)}))
- ORDER BY created_at DESC LIMIT 60`:[];
+ const videos=visible?await db()`SELECT v.id,v.caption,v.description,v.video_key,
+ v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,v.status,
+ v.visibility,v.allow_remix,v.source_video_id,
+ author.id AS author_id,author.handle,author.display_name,
+ author.avatar_url,author.avatar_key,author.is_verified,
+ (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
+ (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
+ (SELECT count(*)::int FROM video_reposts r WHERE r.video_id=v.id) AS reposts_count,
+ EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${id}::uuid) AS liked,
+ EXISTS(SELECT 1 FROM bookmarks b WHERE b.video_id=v.id AND b.user_id=${id}::uuid) AS bookmarked,
+ EXISTS(SELECT 1 FROM video_reposts r WHERE r.video_id=v.id AND r.user_id=${id}::uuid) AS reposted
+ FROM videos v JOIN profiles author ON author.id=v.author_id
+ WHERE v.author_id=${p.id} AND v.status='approved'
+ AND (v.visibility='public' OR v.author_id=${id}::uuid
+ OR (v.visibility='followers' AND ${Boolean(p.is_following)}))
+ ORDER BY v.created_at DESC LIMIT 80`:[];
  return json({profile:await mediaProfile(p),videos:await signVideoRows(videos)});
 }
+
 async function follow(req,handle){
  const me=await viewer(req);
  const rows=await db()`SELECT id,is_private FROM profiles WHERE handle=${handle} AND disabled_at IS NULL LIMIT 1`;
@@ -509,10 +528,22 @@ async function notifications(req){
 }
 async function ownVideos(req){
  const me=await viewer(req);
- const rows=await db()`SELECT id,caption,status,visibility,created_at FROM videos
- WHERE author_id=${me.id} ORDER BY created_at DESC LIMIT 100`;
- return json({items:rows.map(row=>({...row,video_url:''}))});
+ const rows=await db()`SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,
+ v.created_at,v.duration_seconds,v.music_title,v.visibility,v.status,v.allow_remix,v.source_video_id,
+ p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
+ (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
+ (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
+ (SELECT count(*)::int FROM video_reposts r WHERE r.video_id=v.id) AS reposts_count,
+ EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${me.id}) AS liked,
+ EXISTS(SELECT 1 FROM bookmarks b WHERE b.video_id=v.id AND b.user_id=${me.id}) AS bookmarked,
+ EXISTS(SELECT 1 FROM video_reposts r WHERE r.video_id=v.id AND r.user_id=${me.id}) AS reposted
+ FROM videos v JOIN profiles p ON p.id=v.author_id WHERE v.author_id=${me.id}
+ ORDER BY v.created_at DESC LIMIT 100`;
+ const published=rows.filter(v=>v.status==='approved');
+ const rest=rows.filter(v=>v.status!=='approved').map(({video_key,avatar_key,...row})=>({...row,video_url:''}));
+ return json({items:[...await signVideoRows(published),...rest]});
 }
+
 async function saved(req){
  const me=await viewer(req);
  const rows=await db()`SELECT v.id,v.caption,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
@@ -542,6 +573,33 @@ async function videoPreference(req,vid){
   await db()`DELETE FROM video_not_interested WHERE user_id=${me.id} AND video_id=${vid}`;
  }
  return json({hidden:req.method==='POST'});
+}
+async function singleVideo(req,vid){
+ if(!validUUID(vid))throw new AppError(400,'Invalid video');
+ const me=await viewer(req,false);
+ const id=me?.id||'00000000-0000-0000-0000-000000000000';
+ const rows=await db()`SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,
+ v.created_at,v.duration_seconds,v.music_title,v.visibility,v.status,v.allow_remix,v.source_video_id,
+ p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
+ (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
+ (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
+ (SELECT count(*)::int FROM video_reposts r WHERE r.video_id=v.id) AS reposts_count,
+ EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${id}::uuid) AS liked,
+ EXISTS(SELECT 1 FROM bookmarks b WHERE b.video_id=v.id AND b.user_id=${id}::uuid) AS bookmarked,
+ EXISTS(SELECT 1 FROM video_reposts r WHERE r.video_id=v.id AND r.user_id=${id}::uuid) AS reposted
+ FROM videos v JOIN profiles p ON p.id=v.author_id
+ WHERE v.id=${vid} AND v.status='approved' AND p.disabled_at IS NULL
+ AND (v.author_id=${id}::uuid
+ OR (v.visibility='public' AND p.is_private=false)
+ OR (v.visibility IN ('public','followers') AND EXISTS(
+ SELECT 1 FROM follows f WHERE f.follower_id=${id}::uuid
+ AND f.following_id=p.id AND f.status='accepted')))
+ AND NOT EXISTS(SELECT 1 FROM blocks b WHERE
+ (b.blocker_id=${id}::uuid AND b.blocked_id=p.id)
+ OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid)) LIMIT 1`;
+ if(!rows.length)throw new AppError(404,'Video unavailable');
+ const signed=await signVideoRows(rows);
+ return json(signed[0]);
 }
 async function videoAction(req,vid,action){
  if(!validUUID(vid))throw new AppError(400,'Invalid video');
@@ -1201,6 +1259,7 @@ async function handle(req){
  if(act&&(method==='POST'||method==='DELETE'))return videoAction(req,act[1],act[2]);
  const single=pathname.match(/^\/api\/videos\/([a-f0-9-]+)$/);
  if(single&&method==='DELETE')return deleteVideo(req,single[1]);
+ if(single&&method==='GET')return singleVideo(req,single[1]);
  const f=pathname.match(/^\/api\/users\/([a-z0-9_]{3,25})\/follow$/);
  if(f&&(method==='POST'||method==='DELETE'))return follow(req,f[1]);
  const profilePath=pathname.match(/^\/api\/users\/([a-z0-9_]{3,25})$/);
