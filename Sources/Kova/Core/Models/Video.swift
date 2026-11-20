@@ -25,10 +25,3 @@ struct KovaVideo: Codable, Identifiable, Hashable {
     func hash(into hasher:inout Hasher){hasher.combine(id)}
 }
 struct VideoPage: Decodable { let items: [KovaVideo]; let nextCursor: String? }
-struct DemoVideos {
-    static let samples: [KovaVideo] = [
-        KovaVideo(id:"demo-1",caption:"A new space to create. This is a visual preview — not a published video.",videoUrl:"",thumbnailUrl:nil,createdAt:"",durationSeconds:0,musicTitle:"Kova original",authorId:"",handle:"kova",displayName:"Kova Studio",avatarUrl:nil,isVerified:true,likesCount:0,commentsCount:0,liked:false,bookmarked:false,isDemo:true),
-        KovaVideo(id:"demo-2",caption:"Big ideas start small. Your next favorite community could be here.",videoUrl:"",thumbnailUrl:nil,createdAt:"",durationSeconds:0,musicTitle:"Create something",authorId:"",handle:"discover",displayName:"Discover Kova",avatarUrl:nil,isVerified:false,likesCount:0,commentsCount:0,liked:false,bookmarked:false,isDemo:true),
-        KovaVideo(id:"demo-3",caption:"Your videos. Your people. Your space.",videoUrl:"",thumbnailUrl:nil,createdAt:"",durationSeconds:0,musicTitle:"Original audio",authorId:"",handle:"community",displayName:"Kova Community",avatarUrl:nil,isVerified:false,likesCount:0,commentsCount:0,liked:false,bookmarked:false,isDemo:true)
-    ]
-}

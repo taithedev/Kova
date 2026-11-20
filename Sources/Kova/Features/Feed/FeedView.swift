@@ -57,7 +57,7 @@ struct FeedView:View {
                 .font(.system(size:16,weight:.bold)).padding(12)
                 .background(.black.opacity(0.26),in:Capsule())
                 .padding(.top,10)
-                if session.isPreviewing {VStack{Spacer();Text("PREVIEW • sample cards, not live video").font(.caption2).bold().padding(8).background(.black.opacity(0.5),in:Capsule()).padding(.bottom,12)}}
+                if session.isPreviewing {VStack{Spacer();Text("BROWSING AS A GUEST").font(.caption2).bold().padding(8).background(.black.opacity(0.5),in:Capsule()).padding(.bottom,12)}}
             }
         }
         .task(id:session.user?.id){await model.load(api:session.api,preview:session.isPreviewing)}

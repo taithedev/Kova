@@ -13,7 +13,7 @@ import Foundation
     func load(api:APIClient,preview:Bool,reset:Bool=true) async {
         if isLoading {return};isLoading=true;defer{isLoading=false}
         if reset {videos=[];cursor=nil;errorMessage=nil}
-        if preview {videos=DemoVideos.samples;return}
+        if preview && mode == "following" { videos=[]; return }
         do {
             var path="/api/feed?mode=\(mode)"
             if let cursor {path+="&cursor=\(cursor)"}
