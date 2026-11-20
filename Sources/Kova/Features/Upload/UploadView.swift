@@ -1,63 +1,244 @@
 import SwiftUI
 import PhotosUI
-struct UploadView:View {
-    @EnvironmentObject private var session:SessionStore
-    @State private var selected:PhotosPickerItem?
-    @State private var videoURL:URL?
-    @State private var caption=""
+import AVKit
+
+struct UploadView: View {
+    @EnvironmentObject private var session: SessionStore
+    @State private var selected: PhotosPickerItem?
+    @State private var selectedURL: URL?
+    @State private var originalURL: URL?
+    @State private var editing: KovaEditingInput?
+    @State private var pendingRecorded: KovaEditingInput?
+    @State private var caption = ""
+    @State private var visibility = "private"
+    @State private var showCamera = false
+    @State private var uploading = false
+    @State private var message: String?
+
     private var accountID: String { session.user?.id ?? "" }
-    @State private var visibility="private"
-    @State private var showCamera=false
-    @State private var uploading=false
-    @State private var message:String?
-    var body:some View {
+
+    var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment:.leading,spacing:22) {
-                    SectionHeading(title:"Create",subtitle:"Make something people will remember")
-                    ZStack {
-                        RoundedRectangle(cornerRadius:28).fill(KovaTheme.panel).frame(height:220)
-                        VStack(spacing:15) {
-                            Image(systemName:videoURL == nil ? "video.badge.plus" : "checkmark.circle.fill").font(.system(size:52)).foregroundStyle(KovaTheme.lavender)
-                            Text(videoURL == nil ? "Your next story starts here" : "Video selected").font(.headline)
-                            if let videoURL {Text(videoURL.lastPathComponent).font(.caption).foregroundStyle(KovaTheme.muted).lineLimit(1)}
+                VStack(alignment: .leading, spacing: 19) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("CREATE / KOVA")
+                            .font(.system(size: 10, weight: .black, design: .monospaced))
+                            .tracking(1.7)
+                            .foregroundStyle(KovaTheme.muted)
+                        Text("Make your next video.")
+                            .font(.system(size: 32, weight: .heavy))
+                            .tracking(-1.2)
+                        Text("Record with our camera, add your effects, and share it.")
+                            .font(.subheadline).foregroundStyle(KovaTheme.muted)
+                    }
+                    .padding(.top, 18)
+
+                    VStack(spacing: 16) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(KovaTheme.banner("glacier"))
+                            VStack(spacing: 14) {
+                                Image(systemName: selectedURL == nil ? "video.badge.plus" : "checkmark.seal.fill")
+                                    .font(.system(size: 48))
+                                    .symbolRenderingMode(.hierarchical)
+                                Text(selectedURL == nil ? "Your video starts here" : "Ready for your caption")
+                                    .font(.headline)
+                                if let selectedURL {
+                                    Text(selectedURL.lastPathComponent)
+                                        .font(.footnote)
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 22)
+                                }
+                            }
+                            .foregroundStyle(.white)
+                        }
+                        .frame(height: 220)
+
+                        HStack(spacing: 11) {
+                            Button {
+                                showCamera = true
+                            } label: {
+                                Label("Kova Camera", systemImage: "camera.fill")
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 45)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(KovaTheme.accent)
+                            .disabled(uploading || session.user == nil)
+
+                            PhotosPicker(selection: $selected, matching: .videos) {
+                                Label("Import", systemImage: "photo.on.rectangle.angled")
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 45)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(uploading || session.user == nil)
+                        }
+                        .font(.system(size: 14, weight: .bold))
+
+                        if let source = originalURL {
+                            Button {
+                                editing = KovaEditingInput(url: source, initialFilter: .original)
+                            } label: {
+                                Label("Edit clip again", systemImage: "slider.horizontal.3")
+                                    .font(.subheadline.bold())
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(uploading)
                         }
                     }
-                    HStack(spacing:12) {
-                        PhotosPicker(selection:$selected,matching:.videos){Label("Choose video",systemImage:"photo.on.rectangle.angled").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent).tint(KovaTheme.accent)
-                        Button{showCamera=true}label:{Label("Record",systemImage:"camera.fill").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent).tint(KovaTheme.accent)
+                    .padding(15)
+                    .kovaGlass(radius: 24)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("CAPTION").font(.caption.bold()).tracking(1.2)
+                            Spacer()
+                            Text("\(caption.count)/2200")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(KovaTheme.muted)
+                        }
+                        TextField("Tell your story…  #gaming #music", text: $caption, axis: .vertical)
+                            .lineLimit(3...6)
+                            .padding(15)
+                            .background(KovaTheme.panel, in: RoundedRectangle(cornerRadius: 16))
+                            .onChange(of: caption) { _, value in
+                                if value.count > 2200 { caption = String(value.prefix(2200)) }
+                            }
+                        Text("Hashtags help people discover your videos.")
+                            .font(.footnote).foregroundStyle(KovaTheme.muted)
                     }
-                    VStack(alignment:.leading,spacing:9){Text("Caption").font(.headline);TextField("Tell your story...",text:$caption,axis:.vertical).lineLimit(3...6).padding(16).background(KovaTheme.panel,in:RoundedRectangle(cornerRadius:17))}
-                    VStack(alignment:.leading,spacing:9){Text("Who can see this?").font(.headline);Picker("Visibility",selection:$visibility){Text("Everyone").tag("public");Text("Followers").tag("followers");Text("Only me").tag("private")}.pickerStyle(.segmented)}
-                    GlassPanel {HStack(alignment:.top){Image(systemName:"checkmark.shield.fill").foregroundStyle(KovaTheme.aqua);Text("Videos publish as soon as uploading finishes. Follow community rules, respect privacy, and report unsafe posts. Staff can remove violations.").font(.footnote).foregroundStyle(KovaTheme.muted)}}
-                    GradientButton(uploading ? "Publishing..." : "Publish video now",icon:"arrow.up.circle.fill") {Task{await publish()}}
-                        .disabled(uploading || videoURL == nil || session.user == nil || !AppConfig.isConfigured)
-                    if uploading {ProgressView("Uploading and publishing…").tint(KovaTheme.accent).frame(maxWidth:.infinity)}
-                    if session.user==nil {Text("Sign in to upload.").font(.footnote).foregroundStyle(KovaTheme.muted)}
-                    if let message {Text(message).font(.footnote).foregroundStyle(KovaTheme.lavender)}
-                }.padding(18)
-            }.background(KovaTheme.background)
-            .onChange(of:selected){_,new in Task{if let movie=try? await new?.loadTransferable(type:PickedMovie.self){videoURL=movie.url}}}
-            .task {
-                if !accountID.isEmpty {
-                    caption = KovaLocalState.draft(account: accountID, key: "video.caption")
-                    let stored = KovaLocalState.draft(account: accountID, key: "video.visibility")
-                    if ["public","followers","private"].contains(stored) { visibility = stored }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("WHO CAN WATCH?").font(.caption.bold()).tracking(1.2)
+                        Picker("Visibility", selection: $visibility) {
+                            Text("Everyone").tag("public")
+                            Text("Followers").tag("followers")
+                            Text("Only me").tag("private")
+                        }
+                        .pickerStyle(.segmented)
+                        if session.user?.isPrivate == true && visibility == "public" {
+                            Label("Your account is private. Public discovery stays off until you choose a public profile.",
+                                  systemImage: "lock.shield")
+                                .font(.caption).foregroundStyle(KovaTheme.muted)
+                        }
+                    }
+
+                    GlassPanel {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "checkmark.shield")
+                                .foregroundStyle(KovaTheme.accent)
+                            Text("Videos publish when the upload completes—no approval queue. Staff can remove policy violations, and other members can report unsafe content.")
+                                .font(.footnote).foregroundStyle(KovaTheme.muted)
+                        }
+                    }
+
+                    Button {
+                        Task { await publish() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if uploading {
+                                ProgressView().tint(.white).padding(.trailing, 9)
+                            }
+                            Label(uploading ? "Uploading and publishing…" : "Publish video",
+                                  systemImage: "arrow.up.circle.fill")
+                                .font(.system(size: 16, weight: .bold))
+                            Spacer()
+                        }
+                        .frame(height: 51)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(KovaTheme.accent)
+                    .disabled(uploading || selectedURL == nil || session.user == nil ||
+                              !AppConfig.isConfigured || caption.count > 2200)
+                    if session.user == nil {
+                        Text("Sign in to start recording and posting.")
+                            .font(.footnote).foregroundStyle(KovaTheme.muted)
+                    }
+                    if let message {
+                        Label(message, systemImage: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(KovaTheme.muted)
+                    }
+                }
+                .padding(18)
+                .padding(.bottom, 24)
+            }
+            .background(KovaTheme.background)
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showCamera, onDismiss: {
+                if let pendingRecorded {
+                    editing = pendingRecorded
+                    self.pendingRecorded = nil
+                }
+            }) {
+                KovaRecorderView { video, preset in
+                    originalURL = video
+                    selectedURL = video
+                    pendingRecorded = KovaEditingInput(
+                        url: video,
+                        initialFilter: KovaVideoFilter(rawValue: preset) ?? .original
+                    )
                 }
             }
-            .onChange(of:caption){_,new in
-                if !accountID.isEmpty { KovaLocalState.setDraft(new, account: accountID, key:"video.caption") }
+            .sheet(item: $editing) { source in
+                KovaEditorView(input: source) { output in
+                    selectedURL = output
+                    message = "Video edited successfully. You can publish it now."
+                }
             }
-            .onChange(of:visibility){_,new in
-                if !accountID.isEmpty { KovaLocalState.setDraft(new, account: accountID, key:"video.visibility") }
+            .onChange(of: selected) { _, new in
+                Task {
+                    guard let new else { return }
+                    do {
+                        if let video = try await new.loadTransferable(type: PickedMovie.self) {
+                            selectedURL = video.url
+                            originalURL = video.url
+                            editing = KovaEditingInput(url: video.url, initialFilter: .original)
+                        } else {
+                            message = "Could not import that video. Try MP4 or MOV."
+                        }
+                    } catch { message = error.localizedDescription }
+                }
             }
-            .sheet(isPresented:$showCamera){CameraPicker{videoURL=$0}.ignoresSafeArea()}
+            .task {
+                guard !accountID.isEmpty else { return }
+                caption = KovaLocalState.draft(account: accountID, key: "video.caption")
+                let stored = KovaLocalState.draft(account: accountID, key: "video.visibility")
+                if ["public", "followers", "private"].contains(stored) { visibility = stored }
+            }
+            .onChange(of: caption) { _, value in
+                if !accountID.isEmpty {
+                    KovaLocalState.setDraft(value, account: accountID, key: "video.caption")
+                }
+            }
+            .onChange(of: visibility) { _, value in
+                if !accountID.isEmpty {
+                    KovaLocalState.setDraft(value, account: accountID, key: "video.visibility")
+                }
+            }
         }
     }
+
     private func publish() async {
-        guard let videoURL else{return}
-        uploading=true;defer{uploading=false}
-        do{let published=try await UploadService(api:session.api).upload(file:videoURL,caption:caption,visibility:visibility);message=published.message;self.videoURL=nil;caption="";selected=nil;visibility="private"}
-        catch{message=error.localizedDescription}
+        guard !uploading, let url = selectedURL else { return }
+        uploading = true
+        message = nil
+        defer { uploading = false }
+        do {
+            let published = try await UploadService(api: session.api).upload(
+                file: url, caption: caption, visibility: visibility)
+            message = published.message
+            selectedURL = nil
+            originalURL = nil
+            selected = nil
+            caption = ""
+            visibility = "private"
+        } catch {
+            message = error.localizedDescription
+        }
     }
 }
