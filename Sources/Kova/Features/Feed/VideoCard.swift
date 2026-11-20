@@ -9,6 +9,7 @@ struct VideoCard: View {
     let comment: () -> Void
     let report: () -> Void
     let follow: () -> Void
+    let openProfile: () -> Void
     let repost: () -> Void
     let notInterested: () -> Void
     @State private var paused = false
@@ -34,8 +35,14 @@ struct VideoCard: View {
             HStack(alignment: .bottom, spacing: 10) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 9) {
-                        KovaAvatar(name: video.displayName, size: 32, url: video.avatarUrl)
-                        Text("@" + video.handle).font(.system(size: 15, weight: .bold))
+                        Button(action: openProfile) {
+                            KovaAvatar(name: video.displayName, size: 32, url: video.avatarUrl)
+                        }
+                        .buttonStyle(.plain)
+                        Button(action: openProfile) {
+                            Text("@" + video.handle).font(.system(size: 15, weight: .bold))
+                        }
+                        .buttonStyle(.plain)
                         if video.isVerified == true {
                             KovaVerifiedBadge(size: 16)
                         }
@@ -49,7 +56,7 @@ struct VideoCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VideoActions(video: video, like: like, bookmark: bookmark, comment: comment, report: report, follow: follow,
-                             repost: repost, notInterested: notInterested)
+                             repost: repost, notInterested: notInterested, openProfile: openProfile)
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 20)

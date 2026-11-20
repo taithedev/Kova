@@ -8,6 +8,7 @@ struct FeedView: View {
     @State private var commentsVideo: KovaVideo?
     @State private var reportVideo: KovaVideo?
     @State private var needsSignIn = false
+    @State private var selectedProfile: KovaProfileDestination?
 
     var body: some View {
         GeometryReader { geo in
@@ -30,6 +31,9 @@ struct FeedView: View {
         .task(id: session.user?.id) {
             model.mode = savedMode
             await model.load(api: session.api, preview: session.isPreviewing)
+        }
+        .sheet(item: $selectedProfile) { destination in
+            NavigationStack { UserProfileView(handle: destination.handle) }
         }
         .sheet(item: $commentsVideo) { CommentsSheet(video: $0) }
         .sheet(item: $reportVideo) {
@@ -107,6 +111,7 @@ struct FeedView: View {
                 else { needsSignIn = true }
             },
             follow: { signedIn { await follow(video.handle) } },
+            openProfile: { selectedProfile = KovaProfileDestination(handle: video.handle) },
             repost: { signedIn { await model.repost(video.id, api: session.api) } },
             notInterested: {
                 signedIn {
@@ -169,3 +174,5 @@ struct FeedView: View {
         Task { await operation() }
     }
 }
+
+struct KovaProfileDestination: Identifiable { let handle: String; var id: String { handle } }

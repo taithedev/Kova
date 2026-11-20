@@ -20,7 +20,7 @@ struct SearchResponse: Decodable {
 }
 struct ProfileResponse: Decodable {
     let profile: KovaUser
-    let videos: [ProfileVideo]
+    let videos: [KovaVideo]
 }
 struct ProfileVideo: Decodable, Identifiable {
     let id: String
