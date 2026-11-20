@@ -181,8 +181,10 @@ async function feed(req){
  EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${id}::uuid) AS liked,
  EXISTS(SELECT 1 FROM bookmarks b WHERE b.video_id=v.id AND b.user_id=${id}::uuid) AS bookmarked
  FROM videos v JOIN profiles p ON p.id=v.author_id
- WHERE v.status='approved' AND v.visibility='public' AND p.is_private=false AND p.disabled_at IS NULL
- AND (${mode}='for-you' OR EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=${id}::uuid AND f.following_id=p.id AND f.status='accepted'))
+ WHERE v.status='approved' AND p.disabled_at IS NULL
+ AND ((${mode}='for-you' AND v.visibility='public' AND p.is_private=false)
+ OR (${mode}='following' AND v.visibility IN ('public','followers')
+ AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=${id}::uuid AND f.following_id=p.id AND f.status='accepted')))
  AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid))
  ORDER BY v.created_at DESC LIMIT 12 OFFSET ${offset}`;
  const items=await signVideoRows(rows);
@@ -341,7 +343,9 @@ async function comments(req,vid,cid){
  FROM comments c JOIN profiles p ON p.id=c.user_id JOIN videos v ON v.id=c.video_id
  JOIN profiles author ON author.id=v.author_id
  WHERE c.video_id=${vid} AND c.deleted_at IS NULL AND v.status='approved'
- AND (v.author_id=${id}::uuid OR (v.visibility='public' AND author.is_private=false))
+ AND (v.author_id=${id}::uuid OR (v.visibility='public' AND author.is_private=false)
+ OR (v.visibility IN ('public','followers') AND EXISTS(SELECT 1 FROM follows f
+ WHERE f.follower_id=${id}::uuid AND f.following_id=v.author_id AND f.status='accepted')))
  AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid))
  ORDER BY c.created_at DESC LIMIT 100`;
  return json({items:rows});
@@ -351,7 +355,13 @@ async function comments(req,vid,cid){
  if(!body||body.length>500)throw new AppError(400,'Comment must be 1–500 characters.');
  const r=await db()`INSERT INTO comments(video_id,user_id,body)
  SELECT v.id,${me.id},${body} FROM videos v JOIN profiles p ON p.id=v.author_id
- WHERE v.id=${vid} AND v.status='approved' AND v.visibility='public' AND p.is_private=false
+ WHERE v.id=${vid} AND v.status='approved' AND
+ ((v.visibility='public' AND p.is_private=false)
+ OR (v.visibility IN ('public','followers') AND EXISTS(SELECT 1 FROM follows f
+ WHERE f.follower_id=${me.id}::uuid AND f.following_id=v.author_id AND f.status='accepted')))
+ AND NOT EXISTS(SELECT 1 FROM blocks b WHERE
+ (b.blocker_id=${me.id}::uuid AND b.blocked_id=v.author_id)
+ OR (b.blocker_id=v.author_id AND b.blocked_id=${me.id}::uuid))
  RETURNING id,body,created_at`;
  if(!r.length)throw new AppError(404,'Video unavailable');
  return json(r[0],201);
@@ -467,7 +477,7 @@ async function handle(req){
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
  const method=req.method.toUpperCase();
  if(method==='GET'&&(pathname==='/'||pathname==='/api/health'))
- return json({service:'kova-api',status:'ok',version:'0.3.0',account_provider:'Neon Managed Better Auth'});
+ return json({service:'kova-api',status:'ok',version:'0.3.1',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
  if(method==='GET'&&pathname==='/api/health/db'){await db()`SELECT 1`;return json({status:'connected'});}
  if(method==='GET'&&pathname==='/api/auth/username-available'){
   const h=cleanHandle(url.searchParams.get('handle'));if(!validHandle(h))return json({available:false,reason:'invalid'});
