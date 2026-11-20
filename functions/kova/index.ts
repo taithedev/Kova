@@ -529,7 +529,7 @@ async function notifications(req){
 async function ownVideos(req){
  const me=await viewer(req);
  const rows=await db()`SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,
- v.created_at,v.duration_seconds,v.music_title,v.visibility,v.status,v.allow_remix,v.source_video_id,
+ v.created_at,v.duration_seconds,v.music_title,v.visibility,v.status,v.allow_remix,v.source_video_id,v.remix_type,
  p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
  (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
  (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
@@ -579,7 +579,7 @@ async function singleVideo(req,vid){
  const me=await viewer(req,false);
  const id=me?.id||'00000000-0000-0000-0000-000000000000';
  const rows=await db()`SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,
- v.created_at,v.duration_seconds,v.music_title,v.visibility,v.status,v.allow_remix,v.source_video_id,
+ v.created_at,v.duration_seconds,v.music_title,v.visibility,v.status,v.allow_remix,v.source_video_id,v.remix_type,
  p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
  (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
  (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
@@ -787,12 +787,56 @@ async function postVideo(req){
  if(length<1||length>100*1024*1024)throw new AppError(400,'Video must be 1–100 MB');
  const contentType=head.headers.get('content-type')||'';
  if(!['video/mp4','video/quicktime'].includes(contentType))throw new AppError(400,'Unsupported video format');
- const title=String(b.music_title||'Original audio').slice(0,140);
- const rows=await db()`INSERT INTO videos(author_id,video_key,video_url,caption,duration_seconds,music_title,visibility,status)
- VALUES(${me.id},${key},'private',${caption},${duration},${title},${visibility},'approved')
+ const title=String(b.music_title||'Original audio').trim().slice(0,140);
+ const description=String(b.description||'').trim();
+ if(description.length>1200)throw new AppError(400,'Description is too long');
+ const allowRemix=b.allow_remix===true && visibility==='public';
+ const sourceID=b.source_video_id==null?null:String(b.source_video_id);
+ const remixType=b.remix_type==null?null:String(b.remix_type);
+ if((sourceID===null)!==(remixType===null))throw new AppError(400,'Remix requires a source video and type');
+ if(sourceID!==null){
+  if(!validUUID(sourceID)||!['stitch','duet'].includes(remixType))
+   throw new AppError(400,'Invalid remix');
+  const source=await db()`SELECT 1 FROM videos v JOIN profiles p ON p.id=v.author_id
+    WHERE v.id=${sourceID} AND v.allow_remix=true AND v.visibility='public'
+    AND v.status='approved' AND p.is_private=false AND p.disabled_at IS NULL
+    AND NOT EXISTS(SELECT 1 FROM blocks x WHERE
+     (x.blocker_id=${me.id} AND x.blocked_id=p.id) OR
+     (x.blocker_id=p.id AND x.blocked_id=${me.id})) LIMIT 1`;
+  if(!source.length)throw new AppError(403,'This creator has not allowed remixes');
+ }
+ const rows=await db()`INSERT INTO videos(author_id,video_key,video_url,caption,description,duration_seconds,music_title,visibility,status,allow_remix,source_video_id,remix_type)
+ VALUES(${me.id},${key},'private',${caption},${description},${duration},${title},${visibility},'approved',${allowRemix},${sourceID},${remixType})
  ON CONFLICT(video_key) DO NOTHING RETURNING id,status,created_at`;
  if(!rows.length)throw new AppError(409,'This upload has already been posted.');
+ // Resolve up to five genuine account mentions; do not notify blocked accounts.
+ const found=[...new Set(((caption+' '+description).match(/@([a-z0-9_]{3,25})/gi)||[])
+  .map(v=>v.slice(1).toLowerCase()))].slice(0,5);
+ for(const handle of found){
+  const targets=await db()`SELECT p.id FROM profiles p
+   WHERE p.handle=${handle} AND p.disabled_at IS NULL AND p.id<>${me.id}
+   AND NOT EXISTS (SELECT 1 FROM blocks b WHERE
+    (b.blocker_id=p.id AND b.blocked_id=${me.id})
+    OR (b.blocker_id=${me.id} AND b.blocked_id=p.id)) LIMIT 1`;
+  if(targets.length){
+   await db()`INSERT INTO video_mentions(video_id,mentioned_id)
+    VALUES(${rows[0].id},${targets[0].id}) ON CONFLICT DO NOTHING`;
+   await db()`INSERT INTO notifications(recipient_id,actor_id,video_id,kind,body)
+    VALUES(${targets[0].id},${me.id},${rows[0].id},'mention','@' || ${me.handle} || ' mentioned you in a video')`;
+  }
+ }
  return json({...rows[0],message:'Video published. You can remove it anytime; staff can take down content that violates community rules.'},201);
+}
+async function remixPreference(req,vid){
+ const me=await viewer(req);
+ if(!validUUID(vid))throw new AppError(400,'Invalid video');
+ const b=await parseBody(req);
+ if(typeof b.allow_remix!=='boolean')throw new AppError(400,'Invalid remix setting');
+ const updated=await db()`UPDATE videos SET allow_remix=${b.allow_remix}
+ WHERE id=${vid} AND author_id=${me.id} AND visibility='public'
+ AND status='approved' RETURNING id,allow_remix`;
+ if(!updated.length)throw new AppError(404,'Public video not found');
+ return json(updated[0]);
 }
 async function deleteVideo(req,vid){
  const me=await viewer(req);
@@ -1257,6 +1301,8 @@ async function handle(req){
  if(pref&&(method==='POST'||method==='DELETE'))return videoPreference(req,pref[1]);
  const act=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/(like|bookmark|repost)$/);
  if(act&&(method==='POST'||method==='DELETE'))return videoAction(req,act[1],act[2]);
+ const remixAllowed=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/remix-permission$/);
+ if(remixAllowed&&method==='PATCH')return remixPreference(req,remixAllowed[1]);
  const single=pathname.match(/^\/api\/videos\/([a-f0-9-]+)$/);
  if(single&&method==='DELETE')return deleteVideo(req,single[1]);
  if(single&&method==='GET')return singleVideo(req,single[1]);
