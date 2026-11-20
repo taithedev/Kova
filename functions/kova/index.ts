@@ -72,7 +72,7 @@ async function betterAuth(action,payload){
  let result;
  try{result=await res.json();}catch{result={};}
  if(!res.ok){
-  console.error('Neon Better Auth rejected request',action,res.status,'code:',String(result?.code||'unknown').slice(0,70),'message:',String(result?.message||'').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[email]').slice(0,180));
+  console.error('Neon auth request rejected: '+JSON.stringify({action,status:res.status,code:String(result?.code||'unknown').slice(0,60),message:String(result?.message||'').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[redacted]').slice(0,140)}));
   if(action==='sign-in/email')throw new AppError(401,'Incorrect username or password');
   if(res.status===429)throw new AppError(429,'Please try again in a few minutes');
   throw new AppError(503,'Could not create your account right now. Please try again.');
@@ -93,7 +93,7 @@ async function register(req){
  if(found.length)throw new AppError(409,'This username is already taken.');
  // Managed Better Auth requires email identities. A random reserved address is internal
  // and never presented as a real contact/recovery email. No email is collected.
- const internal='kova-'+randomUUID().replace(/-/g,'')+'@accounts.kova.invalid';
+ const internal='kova-'+randomUUID().replace(/-/g,'')+'@example.com';
  const signed=await betterAuth('sign-up/email',{email:internal,name:displayName,password});
  const authId=String(signed?.user?.id||'');
  if(!authId)throw new AppError(503,'Account service did not confirm registration');
