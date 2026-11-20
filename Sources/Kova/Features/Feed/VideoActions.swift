@@ -12,7 +12,7 @@ struct VideoActions: View {
     var body: some View {
         VStack(spacing: 23) {
             Button(action: follow) {
-                KovaAvatar(name: video.handle, size: 50)
+                KovaAvatar(name: video.handle, size: 50, url: video.avatarUrl)
                     .overlay(alignment: .bottom) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 22))

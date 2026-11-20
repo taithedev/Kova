@@ -63,7 +63,7 @@ struct WelcomeView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(KovaTheme.foreground)
                         .frame(maxWidth: .infinity, minHeight: 49)
-                    Text("Ages 13+ · Profiles start private · No automated feeds")
+                    Text("Ages 13+ · Private by default · Real creators")
                         .font(.system(size: 11))
                         .foregroundStyle(KovaTheme.muted)
                         .frame(maxWidth: .infinity)

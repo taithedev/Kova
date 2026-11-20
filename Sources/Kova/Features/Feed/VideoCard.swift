@@ -32,10 +32,10 @@ struct VideoCard: View {
             HStack(alignment: .bottom, spacing: 10) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 9) {
-                        KovaAvatar(name: video.displayName, size: 32)
+                        KovaAvatar(name: video.displayName, size: 32, url: video.avatarUrl)
                         Text("@" + video.handle).font(.system(size: 15, weight: .bold))
                         if video.isVerified == true {
-                            Image(systemName: "checkmark.seal.fill").font(.system(size: 13))
+                            KovaVerifiedBadge(size: 16)
                         }
                     }
                     Text(video.caption).font(.system(size: 14, weight: .medium))

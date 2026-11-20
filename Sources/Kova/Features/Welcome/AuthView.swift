@@ -61,7 +61,7 @@ struct AuthView: View {
                         available = nil
                         session.errorMessage = nil
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(KovaTheme.foreground)
                     .font(.system(size: 14, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     Text("Kova accounts are for ages 13+. Teen accounts stay private, and direct messaging is disabled.")
