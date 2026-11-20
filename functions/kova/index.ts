@@ -209,7 +209,7 @@ async function feed(req){
  const id=person?.id||'00000000-0000-0000-0000-000000000000';
  const offset=Math.min(Math.max(parseInt(u.searchParams.get('cursor')||'0',10)||0,0),1000);
  const rows=await db()`WITH candidates AS (
-  SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,v.allow_remix,v.source_video_id,v.remix_type,
+  SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,v.visibility,v.allow_remix,v.source_video_id,v.remix_type,
    p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
    (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
    (SELECT count(*)::int FROM comments co WHERE co.video_id=v.id AND co.deleted_at IS NULL) AS comments_count,
