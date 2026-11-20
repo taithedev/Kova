@@ -1,0 +1,1 @@
+Kova SwiftPM resources directory. All app visuals currently use native SwiftUI drawing.

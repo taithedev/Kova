@@ -1,0 +1,23 @@
+name: Kova API checks
+on:
+  push:
+    paths: ['backend/**', 'database/**', '.github/workflows/api-check.yml']
+  pull_request:
+    paths: ['backend/**', 'database/**', '.github/workflows/api-check.yml']
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          DATABASE_URL: 'postgresql://placeholder:placeholder@localhost:5432/kova'

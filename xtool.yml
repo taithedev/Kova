@@ -1,0 +1,5 @@
+version: 1
+bundleID: com.zuzify.kova
+product: Kova
+infoPath: Support/Info.plist
+iconPath: Assets/AppIcon.png

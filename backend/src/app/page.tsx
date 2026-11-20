@@ -1,0 +1,1 @@
+export default function Home() { return <main style={{maxWidth:640,margin:'12vh auto',padding:30}}><h1>Kova API</h1><p>The Kova backend is online.</p><p>Client API: <code>/api/health</code></p><p>This is not a public-facing video website.</p></main>; }
