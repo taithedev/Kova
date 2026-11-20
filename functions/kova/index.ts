@@ -446,6 +446,42 @@ async function ageSafety(req,handle){
  'Your messaging permissions were updated by Kova staff. You may contact support to appeal.')`;
  return json(updated[0]);
 }
+// Public repost tabs never expose private posts, disabled users or blocked creators.
+async function profileReposts(req,handle){
+ const who=await viewer(req,false);
+ const id=who?.id||'00000000-0000-0000-0000-000000000000';
+ const owners=await db()`SELECT id,is_private FROM profiles WHERE handle=${handle} AND disabled_at IS NULL
+ AND NOT EXISTS(SELECT 1 FROM blocks b WHERE
+ (b.blocker_id=${id}::uuid AND b.blocked_id=profiles.id) OR
+ (b.blocker_id=profiles.id AND b.blocked_id=${id}::uuid)) LIMIT 1`;
+ if(!owners.length)throw new AppError(404,'Profile unavailable');
+ const owner=owners[0];
+ if(owner.is_private && owner.id!==who?.id){
+  const follows=await db()`SELECT 1 FROM follows
+   WHERE follower_id=${id}::uuid AND following_id=${owner.id}
+   AND status='accepted' LIMIT 1`;
+  if(!follows.length) return json({items:[]});
+ }
+ const rows=await db()`SELECT v.id,v.caption,v.description,v.video_key,v.thumbnail_url,
+   v.created_at,v.duration_seconds,v.music_title,v.status,v.visibility,
+   v.allow_remix,v.source_video_id,v.remix_type,
+   p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
+   (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
+   (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
+   (SELECT count(*)::int FROM video_reposts rr WHERE rr.video_id=v.id) AS reposts_count,
+   EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${id}::uuid) AS liked,
+   EXISTS(SELECT 1 FROM bookmarks b WHERE b.video_id=v.id AND b.user_id=${id}::uuid) AS bookmarked,
+   EXISTS(SELECT 1 FROM video_reposts rr WHERE rr.video_id=v.id AND rr.user_id=${id}::uuid) AS reposted
+ FROM video_reposts r JOIN videos v ON v.id=r.video_id
+ JOIN profiles p ON p.id=v.author_id
+ WHERE r.user_id=${owner.id} AND v.status='approved' AND v.visibility='public'
+ AND p.is_private=false AND p.disabled_at IS NULL
+ AND NOT EXISTS(SELECT 1 FROM blocks b WHERE
+ (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR
+ (b.blocker_id=p.id AND b.blocked_id=${id}::uuid))
+ ORDER BY r.created_at DESC LIMIT 80`;
+ return json({items:await signVideoRows(rows)});
+}
 async function profile(req,handle){
  const who=await viewer(req,false);
  const id=who?.id||'00000000-0000-0000-0000-000000000000';
@@ -1275,6 +1311,8 @@ async function handle(req){
  if((method==='GET'||method==='DELETE')&&pathname==='/api/feed/preferences')return feedPreferences(req);
  if(method==='GET'&&pathname==='/api/feed')return feed(req);
  if(method==='GET'&&pathname==='/api/search')return search(req);
+ const repostRoute=pathname.match(/^\/api\/users\/([a-z0-9_]{3,25})\/reposts$/);
+ if(method==='GET'&&repostRoute)return profileReposts(req,repostRoute[1]);
  if(method==='GET'&&pathname==='/api/users/me/stats')return accountStats(req);
  if((method==='GET'||method==='PATCH')&&pathname==='/api/users/me')return userMe(req);
  if(method==='POST'&&pathname==='/api/users/me/block')return blockUser(req);
