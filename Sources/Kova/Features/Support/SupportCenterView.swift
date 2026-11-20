@@ -113,7 +113,7 @@ private struct KovaNewTicketView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var subject = ""
     @State private var category = "technical"
-    @State private var body = ""
+    @State private var ticketMessage = ""
     @State private var busy = false
     @State private var errorMessage: String?
 
@@ -129,10 +129,10 @@ private struct KovaNewTicketView: View {
                     }
                     TextField("Short subject", text: $subject)
                         .textInputAutocapitalization(.sentences)
-                    TextEditor(text: $body)
+                    TextEditor(text: $ticketMessage)
                         .frame(minHeight: 150)
                         .accessibilityLabel("Describe your support request")
-                    Text("\(body.count)/2000")
+                    Text("\(ticketMessage.count)/2000")
                         .font(.caption).foregroundStyle(KovaTheme.muted)
                 }
                 Section {
@@ -140,7 +140,7 @@ private struct KovaNewTicketView: View {
                         Task { await submit() }
                     }
                     .disabled(busy || subject.trimmingCharacters(in: .whitespacesAndNewlines).count < 5
-                              || body.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 || body.count > 2000)
+                              || ticketMessage.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 || ticketMessage.count > 2000)
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(KovaTheme.muted) }
@@ -160,7 +160,7 @@ private struct KovaNewTicketView: View {
         defer { busy = false }
         do {
             let request = try session.api.encode(KovaTicketCreate(subject: subject.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                                category: category, message: body.trimmingCharacters(in: .whitespacesAndNewlines)))
+                                                                category: category, message: ticketMessage.trimmingCharacters(in: .whitespacesAndNewlines)))
             let _: KovaTicketCreateResult = try await session.api.request("/api/support/tickets", method: "POST", json: request)
             dismiss()
         } catch { errorMessage = error.localizedDescription }
