@@ -48,7 +48,7 @@ async function viewer(req,required=true){
  if(!token){if(required)throw new AppError(401,'Please sign in');return null;}
  if(token.length<20||token.length>256)throw new AppError(401,'Session expired');
  const hashed=digest(token);
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,
  s.id AS session_id,s.created_at AS session_created_at,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count
@@ -116,7 +116,7 @@ async function login(req){
  const handle=cleanHandle(b.handle);
  const password=String(b.password||'');
  if(!validHandle(handle)||!password)throw new AppError(401,'Incorrect username or password');
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,p.internal_auth_email
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,p.internal_auth_email
  FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id WHERE p.handle=${handle} AND p.disabled_at IS NULL LIMIT 1`;
  if(!rows.length || !rows[0].internal_auth_email)throw new AppError(401,'Incorrect username or password');
  await betterAuth('sign-in/email',{email:rows[0].internal_auth_email,password});
@@ -185,7 +185,7 @@ async function feed(req){
  const id=person?.id||'00000000-0000-0000-0000-000000000000';
  const offset=Math.min(Math.max(parseInt(u.searchParams.get('cursor')||'0',10)||0,0),1000);
  const rows=await db()`SELECT v.id,v.caption,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,
- p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.is_verified,
+ p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
  (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
  (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
  EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${id}::uuid) AS liked,
@@ -264,7 +264,7 @@ async function userMe(req){
 async function profile(req,handle){
  const who=await viewer(req,false);
  const id=who?.id||'00000000-0000-0000-0000-000000000000';
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.is_private,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,COALESCE(pr.role,p.role) AS role,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.is_private,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,COALESCE(pr.role,p.role) AS role,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count,
  EXISTS(SELECT 1 FROM follows f WHERE f.following_id=p.id AND f.follower_id=${id}::uuid AND f.status='accepted') AS is_following
@@ -330,7 +330,7 @@ async function ownVideos(req){
 }
 async function saved(req){
  const me=await viewer(req);
- const rows=await db()`SELECT v.id,v.caption,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.is_verified,
+ const rows=await db()`SELECT v.id,v.caption,v.video_key,v.thumbnail_url,v.created_at,v.duration_seconds,v.music_title,p.id AS author_id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,
  (SELECT count(*)::int FROM likes l WHERE l.video_id=v.id) AS likes_count,
  (SELECT count(*)::int FROM comments c WHERE c.video_id=v.id AND c.deleted_at IS NULL) AS comments_count,
  EXISTS(SELECT 1 FROM likes l WHERE l.video_id=v.id AND l.user_id=${me.id}) AS liked,
@@ -764,7 +764,7 @@ async function ownerOverview(req){
  const privilegeEvents=await db()`SELECT a.id,a.action,a.old_value,a.new_value,a.created_at,p.handle AS actor
  FROM profile_staff_audit a JOIN profiles p ON p.id=a.actor_id
  ORDER BY a.created_at DESC LIMIT 25`;
- return json({...totals[0],events,privilege_events:privilegeEvents});
+ return json({...totals[0],events:events.map(e=>({...e,id:Number(e.id)})),privilege_events:privilegeEvents.map(e=>({...e,id:Number(e.id)}))});
 }
 
 async function handle(req){

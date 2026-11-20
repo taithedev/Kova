@@ -7,7 +7,7 @@ struct KovaTicket: Decodable, Identifiable {
     let status: String
     let createdAt: String
     let updatedAt: String
-    var handle: String? = nil
+    let handle: String?
 }
 struct KovaTicketPage: Decodable { let items: [KovaTicket] }
 struct KovaTicketMessage: Decodable, Identifiable {

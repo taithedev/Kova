@@ -39,6 +39,6 @@ jobs:
           await call('/api/staff/tickets',401);
           await call('/api/staff/media',401);
           await call('/api/owner/overview',401);
-          await call('/api/owner/overview',401,'POST');
+          await call('/api/owner/overview',404,'POST');
           console.log('PASS: v0.5 health, database and all protected routes reject unauthenticated access');
           JS

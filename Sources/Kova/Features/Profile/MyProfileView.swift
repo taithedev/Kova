@@ -102,6 +102,9 @@ struct MyProfileView: View {
 
     private func load() async {
         guard session.user != nil else { return }
+        if let fresh: KovaUser = try? await session.api.request("/api/auth/me") {
+            session.updateUser(fresh)
+        }
         do {
             let page: OwnVideoPage = try await session.api.request("/api/videos/mine")
             ownVideos = page.items
