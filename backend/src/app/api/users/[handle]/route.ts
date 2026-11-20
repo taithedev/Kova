@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { signedRead } from '@/lib/media';
 import { optionalViewer } from '@/lib/auth';
 import { guarded,json,ApiError } from '@/lib/errors';
 type Ctx={params:Promise<{handle:string}>};
@@ -14,6 +15,7 @@ export async function GET(req:Request,{params}:Ctx){return guarded(async()=>{
  if(!p.length)throw new ApiError(404,'User not found');
  const profile=p[0];
  const canView=!profile.is_private || profile.id===user?.id || profile.is_following;
- const videos=canView?await db()`SELECT id,caption,video_url,thumbnail_url,created_at FROM videos WHERE author_id=${profile.id} AND status='approved' AND (visibility='public' OR author_id=${who}::uuid OR (visibility='followers' AND ${Boolean(profile.is_following)})) ORDER BY created_at DESC LIMIT 60`:[];
- return json({profile,videos});
+ const videos=canView?await db()`SELECT id,caption,video_key,thumbnail_url,created_at FROM videos WHERE author_id=${profile.id} AND status='approved' AND (visibility='public' OR author_id=${who}::uuid OR (visibility='followers' AND ${Boolean(profile.is_following)})) ORDER BY created_at DESC LIMIT 60`:[];
+ const safeVideos=await Promise.all(videos.map(async row=>{const {video_key,...video}=row;return {...video,video_url:await signedRead(String(video_key))};}));
+ return json({profile,videos:safeVideos});
  });}
