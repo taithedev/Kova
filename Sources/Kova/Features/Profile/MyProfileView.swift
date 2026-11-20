@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MyProfileView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var drawer: KovaNavigationState
     @State private var ownVideos: [OwnVideo] = []
     @State private var errorMessage: String?
     @State private var deletingID: String?
@@ -44,7 +45,7 @@ struct MyProfileView: View {
                         .padding(.top, 7)
                         if ownVideos.isEmpty {
                             EmptyState(icon: "video", title: "No videos yet",
-                                       detail: "Your uploads will appear here, including videos awaiting review.")
+                                       detail: "Your uploads will appear here, including videos only you can see.")
                                 .frame(height: 210)
                         } else {
                             LazyVGrid(columns: columns, spacing: 4) {
@@ -80,12 +81,16 @@ struct MyProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink { SettingsView() } label: {
+                    Button {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
+                            drawer.isOpen = true
+                        }
+                    } label: {
                         Image(systemName: "line.3.horizontal")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(KovaTheme.foreground)
                     }
-                    .accessibilityLabel("Settings")
+                    .accessibilityLabel("Open Kova navigation")
                 }
             }
             .task { await load() }
