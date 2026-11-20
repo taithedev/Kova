@@ -4,6 +4,7 @@ import AVKit
 
 struct UploadView: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var remix: KovaRemixCoordinator
     @State private var selected: PhotosPickerItem?
     @State private var selectedURL: URL?
     @State private var originalURL: URL?
@@ -14,6 +15,10 @@ struct UploadView: View {
     @State private var allowRemix = false
     @State private var musicTitle = "Original audio"
     @State private var selectedTags: [String] = []
+    @State private var preparingRemix = false
+    @State private var sourceVideoID: String?
+    @State private var remixType: String?
+    @State private var remixCredit: String?
     @State private var taggedAccount = ""
     @State private var visibility = "private"
     @State private var showCamera = false
@@ -35,6 +40,20 @@ struct UploadView: View {
                             .font(.system(size: 32, weight: .heavy))
                             .tracking(-1.2)
                         Text("Record with our camera, add your effects, and share it.")
+                        if let intent = remix.intent {
+                            Label("Create a " + intent.kind.capitalized + " with @" + intent.sourceHandle,
+                                  systemImage: "rectangle.on.rectangle")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(KovaTheme.accent)
+                        }
+                        if let remixCredit {
+                            Text(remixCredit)
+                                .font(.caption.bold())
+                                .foregroundStyle(KovaTheme.accent)
+                        }
+                        if preparingRemix {
+                            ProgressView("Rendering your duet or stitch…").tint(KovaTheme.accent)
+                        }
                             .font(.subheadline).foregroundStyle(KovaTheme.muted)
                     }
                     .padding(.top, 18)
@@ -215,7 +234,7 @@ struct UploadView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(KovaTheme.accent)
-                    .disabled(uploading || selectedURL == nil || session.user == nil ||
+                    .disabled(uploading || preparingRemix || selectedURL == nil || session.user == nil ||
                               !AppConfig.isConfigured || caption.count > 2200)
                     if session.user == nil {
                         Text("Sign in to start recording and posting.")
@@ -234,8 +253,8 @@ struct UploadView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showCamera, onDismiss: {
                 if let pendingRecorded {
-                    editing = pendingRecorded
                     self.pendingRecorded = nil
+                    processClip(pendingRecorded.url, initialFilter: pendingRecorded.initialFilter)
                 }
             }) {
                 KovaRecorderView { video, preset in
@@ -259,9 +278,7 @@ struct UploadView: View {
                     guard let new else { return }
                     do {
                         if let video = try await new.loadTransferable(type: PickedMovie.self) {
-                            selectedURL = video.url
-                            originalURL = video.url
-                            editing = KovaEditingInput(url: video.url, initialFilter: .original)
+                            processClip(video.url, initialFilter: .original)
                         } else {
                             message = "Could not import that video. Try MP4 or MOV."
                         }
@@ -288,6 +305,56 @@ struct UploadView: View {
         }
     }
 
+    private func processClip(_ clip: URL, initialFilter: KovaVideoFilter) {
+        originalURL = clip
+        selectedURL = clip
+        if let request = remix.intent {
+            Task { await createRemix(using: clip, intent: request) }
+        } else {
+            editing = KovaEditingInput(url: clip, initialFilter: initialFilter)
+        }
+    }
+
+    private func createRemix(using local: URL, intent: KovaRemixIntent) async {
+        guard !preparingRemix, session.user != nil else { return }
+        preparingRemix = true
+        defer { preparingRemix = false }
+        do {
+            let original: KovaVideo = try await session.api.request(
+                "/api/videos/\(intent.sourceID)")
+            guard original.allowRemix == true, original.visibility == "public",
+                  let url = URL(string: original.videoUrl), url.scheme == "https" else {
+                throw APIError.server("The creator has disabled remixes of this video.")
+            }
+            let (download, response) = try await URLSession.shared.download(from: url)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                throw APIError.server("Could not retrieve the original video.")
+            }
+            let source = FileManager.default.temporaryDirectory
+                .appendingPathComponent("kova-source-" + UUID().uuidString)
+                .appendingPathExtension(url.pathExtension.lowercased() == "mov" ? "mov" : "mp4")
+            try FileManager.default.copyItem(at: download, to: source)
+            let edited = try await KovaRemixComposer.make(
+                kind: intent.kind, sourceURL: source, creatorURL: local)
+            originalURL = edited
+            selectedURL = edited
+            sourceVideoID = intent.sourceID
+            remixType = intent.kind
+            remixCredit = intent.kind.capitalized + " with @" + original.handle
+            if caption.isEmpty { caption = remixCredit ?? "" }
+            remix.clear()
+            editing = KovaEditingInput(url: edited, initialFilter: .original)
+            message = "Your " + intent.kind + " is ready to edit."
+        } catch {
+            sourceVideoID = nil
+            remixType = nil
+            remixCredit = nil
+            remix.clear()
+            message = error.localizedDescription
+        }
+    }
+
     private func publish() async {
         guard !uploading, let url = selectedURL else { return }
         uploading = true
@@ -297,7 +364,8 @@ struct UploadView: View {
             let published = try await UploadService(api: session.api).upload(
                 file: url, caption: caption, description: description,
                 visibility: visibility, musicTitle: musicTitle,
-                allowRemix: allowRemix && visibility == "public")
+                allowRemix: allowRemix && visibility == "public",
+                sourceVideoId: sourceVideoID, remixType: remixType)
             message = published.message
             selectedURL = nil
             originalURL = nil
@@ -305,6 +373,9 @@ struct UploadView: View {
             caption = ""
             description = ""
             musicTitle = "Original audio"
+            sourceVideoID = nil
+            remixType = nil
+            remixCredit = nil
             allowRemix = false
             visibility = "private"
         } catch {
