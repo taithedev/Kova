@@ -1,24 +1,20 @@
 import SwiftUI
+
 struct SettingsView: View {
     @EnvironmentObject private var session: SessionStore
     @AppStorage("kova.muteVideos") private var muteVideos = true
+
     var body: some View {
         List {
-            Section("PREFERENCES") {
-                Toggle(isOn: $muteVideos) {
-                    Label("Start videos muted", systemImage: "speaker.slash")
-                }
-                .tint(.white)
-                Label("Videos always play in their original color", systemImage: "play.rectangle")
-                    .foregroundStyle(KovaTheme.muted)
-            }
-            Section("PRIVACY & ACCOUNT") {
-                if let user = session.user {
-                    LabeledContent("Age group", value: user.ageBand ?? "Unknown")
-                    LabeledContent("Messages", value: "Disabled")
+            Section("ACCOUNT") {
+                NavigationLink { AccountCenterView() } label: {
+                    Label("Account center", systemImage: "person.crop.circle.badge.checkmark")
                 }
                 NavigationLink { EditProfileView() } label: {
-                    Label("Edit profile and privacy", systemImage: "lock.shield")
+                    Label("Edit profile", systemImage: "person.text.rectangle")
+                }
+                NavigationLink { NotificationsView() } label: {
+                    Label("Notifications", systemImage: "bell")
                 }
                 NavigationLink { BookmarksView() } label: {
                     Label("Saved videos", systemImage: "bookmark")
@@ -32,20 +28,35 @@ struct SettingsView: View {
                     }
                 }
             }
-            Section("SERVER") {
-                LabeledContent("API",value:AppConfig.isConfigured ? (AppConfig.apiBaseURL.host ?? "Unknown") : "Not configured")
-                Text("To change the server, sign out and connect a new HTTPS API on the sign-in screen.")
+            Section("VIDEO PREFERENCES") {
+                Toggle(isOn: $muteVideos) {
+                    Label("Start videos muted", systemImage: "speaker.slash")
+                }
+                .tint(.white)
+                Label("Videos always keep their original colors", systemImage: "play.rectangle")
+                    .foregroundStyle(KovaTheme.muted)
+            }
+            Section("SAFETY") {
+                LabeledContent("Direct messages", value: "Disabled")
+                if let user = session.user {
+                    LabeledContent("Profile", value: user.isPrivate ? "Private" : "Public")
+                }
+                Text("Kova accounts are 13+. Use report and block tools whenever needed.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
-            Section("ABOUT") {
-                LabeledContent("Version", value: "0.2.1")
-                Text("No harassment, bullying, spam, or sharing someone else's personal information. Report unsafe content.")
+            Section("APP") {
+                LabeledContent("Version", value: "0.3.0")
+                Text("Kova connects automatically. No server configuration required.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
-            Section { Button("Sign out", role: .destructive) { Task { await session.signOut() } } }
+            Section {
+                Button("Sign out", role: .destructive) {
+                    Task { await session.signOut() }
+                }
+            }
         }
+        .navigationTitle("Settings")
         .scrollContentBackground(.hidden)
         .background(KovaTheme.background)
-        .navigationTitle("Settings")
     }
 }
