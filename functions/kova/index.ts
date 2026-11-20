@@ -439,22 +439,51 @@ async function moderation(req,videoId){
  const me=await viewer(req);
  if(!['moderator','admin','owner'].includes(me.role))throw new AppError(403,'Moderator access required');
  if(!videoId){
- const rows=await db()`SELECT v.id,v.caption,v.video_key,v.created_at,p.handle
- FROM videos v JOIN profiles p ON p.id=v.author_id WHERE v.status='pending'
- ORDER BY v.created_at ASC LIMIT 100`;
- const videos=await signVideoRows(rows);
- const reports=await db()`SELECT id,target_type,target_id,reason,created_at FROM reports WHERE status='open' ORDER BY created_at ASC LIMIT 100`;
- return json({videos,reports});
+  // Moderators can act on already-published videos. Private video posts
+  // do not appear in public discovery; abuse reports remain reviewable.
+  const rows=await db()`SELECT v.id,v.caption,v.video_key,v.created_at,p.handle,v.status,v.visibility
+  FROM videos v JOIN profiles p ON p.id=v.author_id
+  WHERE v.status='approved' AND v.visibility <> 'private' AND p.disabled_at IS NULL
+  ORDER BY v.created_at DESC LIMIT 80`;
+  const videos=await signVideoRows(rows);
+  const reports=await db()`SELECT r.id,r.target_type,r.target_id,r.reason,r.detail,r.created_at,
+   COALESCE(p.handle,author.handle,'') AS handle,
+   COALESCE(v.caption,'') AS caption
+   FROM reports r LEFT JOIN videos v ON r.target_type='video' AND r.target_id=v.id
+   LEFT JOIN profiles author ON v.author_id=author.id
+   LEFT JOIN profiles p ON r.target_type='user' AND r.target_id=p.id
+   WHERE r.status='open' ORDER BY r.created_at ASC LIMIT 120`;
+  return json({videos,reports});
  }
  if(!validUUID(videoId))throw new AppError(400,'Invalid video');
  const b=await parseBody(req);
  if(!['approved','rejected'].includes(b.status))throw new AppError(400,'Invalid decision');
  const status=b.status;
  const rows=await db()`UPDATE videos SET status=${status},moderated_at=now(),moderated_by=${me.id}
- WHERE id=${videoId} AND status='pending' RETURNING id,status`;
- if(!rows.length)throw new AppError(404,'Video not found');
+ WHERE id=${videoId} AND status<>${status} RETURNING id,status,author_id`;
+ if(!rows.length)throw new AppError(404,'Video not found or no status change required');
+ await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id,detail)
+ VALUES(${me.id},${'video_'+status},'video',${videoId},${JSON.stringify({reason:String(b.reason||'moderation').slice(0,120)})}::jsonb)`;
+ if(status==='rejected'){
+  await db()`INSERT INTO notifications(recipient_id,actor_id,video_id,kind,body)
+  VALUES(${rows[0].author_id},${me.id},${videoId},'content_removed','One of your videos was removed by Kova moderators. Contact support if you think this was a mistake.')`;
+ }
+ return json({id:rows[0].id,status:rows[0].status});
+}
+async function resolveReport(req,reportId){
+ const me=await viewer(req);
+ if(!['moderator','admin','owner'].includes(me.role))throw new AppError(403,'Moderator access required');
+ if(!validUUID(reportId))throw new AppError(400,'Invalid report identifier');
+ const b=await parseBody(req);
+ if(!['reviewed','dismissed'].includes(b.status))throw new AppError(400,'Invalid report resolution');
+ const rows=await db()`UPDATE reports SET status=${b.status} WHERE id=${reportId} AND status='open'
+ RETURNING id,status`;
+ if(!rows.length)throw new AppError(404,'Open report not found');
+ await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
+ VALUES(${me.id},${'report_'+b.status},'report',${reportId})`;
  return json(rows[0]);
 }
+
 async function uploadURL(req){
  const me=await viewer(req);await throttle(req,'upload',15,60);
  const b=await parseBody(req);
@@ -484,10 +513,10 @@ async function postVideo(req){
  if(!['video/mp4','video/quicktime'].includes(contentType))throw new AppError(400,'Unsupported video format');
  const title=String(b.music_title||'Original audio').slice(0,140);
  const rows=await db()`INSERT INTO videos(author_id,video_key,video_url,caption,duration_seconds,music_title,visibility,status)
- VALUES(${me.id},${key},'private',${caption},${duration},${title},${visibility},'pending')
+ VALUES(${me.id},${key},'private',${caption},${duration},${title},${visibility},'approved')
  ON CONFLICT(video_key) DO NOTHING RETURNING id,status,created_at`;
  if(!rows.length)throw new AppError(409,'This upload has already been posted.');
- return json({...rows[0],message:'Submitted for moderator approval.'},201);
+ return json({...rows[0],message:'Video published. You can remove it anytime; staff can take down content that violates community rules.'},201);
 }
 async function deleteVideo(req,vid){
  const me=await viewer(req);
@@ -649,10 +678,17 @@ async function completeProfileMedia(req){
  const contentType=String(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
  if(contentType!==mime)throw new AppError(400,'Unexpected image format');
  const rows=await db()`INSERT INTO profile_media(owner_id,kind,object_key,mime,byte_length,status)
- VALUES(${me.id},${kind},${key},${mime},${bytes},'pending')
+ VALUES(${me.id},${kind},${key},${mime},${bytes},'approved')
  ON CONFLICT(object_key) DO NOTHING RETURNING id,status`;
- if(!rows.length)throw new AppError(409,'This image was already submitted');
- return json({...rows[0],message:'Image submitted for staff review. It will appear when approved.'},201);
+ if(!rows.length)throw new AppError(409,'This image was already uploaded.');
+ // Publish immediately after the stored object's size and media type are verified.
+ // Reports and the staff media panel still support removal and auditing.
+ if(kind==='avatar'){
+  await db()`UPDATE profiles SET avatar_key=${key},avatar_url=NULL,updated_at=now() WHERE id=${me.id}`;
+ }else{
+  await db()`UPDATE profiles SET banner_key=${key},banner_animated=${mime==='image/gif'},updated_at=now() WHERE id=${me.id}`;
+ }
+ return json({...rows[0],message:'Your '+(kind==='avatar'?'profile photo':'banner')+' is live.'},201);
 }
 async function myMedia(req){
  const me=await viewer(req);
@@ -663,28 +699,36 @@ async function staffMedia(req,id){
  const me=await viewer(req);
  if(!allStaff.includes(me.role))throw new AppError(403,'Staff access required');
  if(!id){
-  const rows=await db()`SELECT m.id,m.kind,m.mime,m.object_key,m.created_at,p.handle
-  FROM profile_media m JOIN profiles p ON p.id=m.owner_id WHERE m.status='pending' ORDER BY m.created_at LIMIT 60`;
-  return json({items:await Promise.all(rows.map(async ({object_key,...row})=>({...row,preview_url:await presignS3('GET',object_key,300)})))});
+  const rows=await db()`SELECT m.id,m.kind,m.mime,m.object_key,m.status,m.created_at,p.handle
+  FROM profile_media m JOIN profiles p ON p.id=m.owner_id
+  WHERE m.status='approved' AND (
+   (m.kind='avatar' AND p.avatar_key=m.object_key)
+    OR (m.kind='banner' AND p.banner_key=m.object_key))
+  ORDER BY m.created_at DESC LIMIT 100`;
+  return json({items:await Promise.all(rows.map(async ({object_key,...row})=>
+   ({...row,preview_url:await presignS3('GET',object_key,300)})))});
  }
  if(!validUUID(id))throw new AppError(400,'Invalid media identifier');
  const b=await parseBody(req);
- if(!['approved','rejected'].includes(b.status))throw new AppError(400,'Invalid decision');
- const rows=await db()`UPDATE profile_media SET status=${b.status},reviewed_by=${me.id},reviewed_at=now()
- WHERE id=${id} AND status='pending' RETURNING id,owner_id,kind,mime,object_key,status`;
- if(!rows.length)throw new AppError(404,'Review item no longer pending');
+ if(b.status!=='rejected')throw new AppError(400,'Only takedown of live media is supported');
+ const rows=await db()`UPDATE profile_media SET status='rejected',reviewed_by=${me.id},reviewed_at=now()
+ WHERE id=${id} AND status='approved' RETURNING id,owner_id,kind,mime,object_key,status`;
+ if(!rows.length)throw new AppError(404,'Active profile media not found');
  const row=rows[0];
- if(row.status==='approved'){
-  if(row.kind==='avatar'){
-   await db()`UPDATE profiles SET avatar_key=${row.object_key},updated_at=now() WHERE id=${row.owner_id}`;
-  } else {
-   await db()`UPDATE profiles SET banner_key=${row.object_key},banner_animated=${row.mime==='image/gif'},updated_at=now()
-   WHERE id=${row.owner_id}`;
-  }
+ if(row.kind==='avatar'){
+  await db()`UPDATE profiles SET avatar_key=NULL,updated_at=now()
+    WHERE id=${row.owner_id} AND avatar_key=${row.object_key}`;
+ }else{
+  await db()`UPDATE profiles SET banner_key=NULL,banner_animated=false,updated_at=now()
+    WHERE id=${row.owner_id} AND banner_key=${row.object_key}`;
  }
- await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
- VALUES(${me.id},'media_'+b.status,'profile_media',${id})`;
- return json({id,status:row.status});
+ await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id,detail)
+ VALUES(${me.id},'media_removed','profile_media',${id},
+ ${JSON.stringify({kind:row.kind})}::jsonb)`;
+ await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
+ VALUES(${row.owner_id},${me.id},'profile_media_removed',
+ 'A profile image was removed by Kova moderators. Please contact support if this was a mistake.')`;
+ return json({id,status:'rejected'});
 }
 // Support v2: stored threads, unread state, priority, history, and auditable staff actions.
 async function ticketEvent(ticketId,actorId,eventType,details={}){
@@ -834,7 +878,7 @@ async function handle(req){
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
  const method=req.method.toUpperCase();
  if(method==='GET'&&(pathname==='/'||pathname==='/api/health'))
- return json({service:'kova-api',status:'ok',version:'0.6.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
+ return json({service:'kova-api',status:'ok',version:'0.7.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
  if(method==='GET'&&pathname==='/api/health/db'){await db()`SELECT 1`;return json({status:'connected'});}
  if(method==='GET'&&pathname==='/api/auth/username-available'){
   const h=cleanHandle(url.searchParams.get('handle'));if(!validHandle(h))return json({available:false,reason:'invalid'});
@@ -890,6 +934,8 @@ async function handle(req){
  if(method==='GET'&&pathname==='/api/moderation/queue')return moderation(req);
  const mod=pathname.match(/^\/api\/moderation\/videos\/([a-f0-9-]+)$/);
  if(mod&&method==='PATCH')return moderation(req,mod[1]);
+ const moderationReport=pathname.match(/^\/api\/moderation\/reports\/([a-f0-9-]+)$/);
+ if(moderationReport&&method==='PATCH')return resolveReport(req,moderationReport[1]);
  const cm=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/comments(?:\/([a-f0-9-]+))?$/);
  if(cm&&(method==='GET'||method==='POST'||method==='DELETE'))return comments(req,cm[1],cm[2]);
  const act=pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/(like|bookmark)$/);
