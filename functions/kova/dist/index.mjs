@@ -174,7 +174,7 @@ UNSIGNED-PAYLOAD`,m=Yr("sha256").update(v).digest("hex"),b=`AWS4-HMAC-SHA256
    VALUES(${n.id},'ticket_priority','support_ticket',${r})`,j(l[0])}if(!["open","in_progress","resolved","closed"].includes(s.status))throw new x(400,"Invalid ticket status");let i=await F()`UPDATE support_tickets SET status=${s.status},updated_at=now(),assigned_to=${n.id}
  WHERE id=${r} RETURNING id,status,author_id`;if(!i.length)throw new x(404,"Ticket not found");return await Xe(r,n.id,"status_changed",{status:s.status}),await F()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
  VALUES(${n.id},'ticket_'+b.status,'support_ticket',${r})`,(s.status==="resolved"||s.status==="closed")&&await F()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
-  VALUES(${i[0].author_id},${n.id},'support_status','A support ticket has been '+${s.status}+'.')`,j({id:i[0].id,status:i[0].status})}async function Yi(a){if((await J(a)).role!=="owner")throw new x(403,"Owner access required");let t=await F()`SELECT
+  VALUES(${i[0].author_id},${n.id},'support_status','A support ticket has been ' || ${s.status} || '.')`,j({id:i[0].id,status:i[0].status})}async function Yi(a){if((await J(a)).role!=="owner")throw new x(403,"Owner access required");let t=await F()`SELECT
  (SELECT count(*)::int FROM profiles WHERE disabled_at IS NULL) AS accounts,
  (SELECT count(*)::int FROM profiles WHERE created_at>=now()-interval '7 days') AS new_accounts_week,
  (SELECT count(*)::int FROM videos WHERE status='approved') AS approved_videos,
