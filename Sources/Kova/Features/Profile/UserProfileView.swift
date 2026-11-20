@@ -9,6 +9,11 @@ struct UserProfileView: View {
     @State private var requested = false
     @State private var report = false
     @State private var selectedVideo: KovaVideo?
+    @State private var repostedVideos: [KovaVideo] = []
+    @State private var selectedCategory = "videos"
+    private var displayedVideos: [KovaVideo] {
+        selectedCategory == "videos" ? result?.videos ?? [] : repostedVideos
+    }
     @State private var showMessages = false
     @State private var confirmBlock = false
     @State private var didBlock = false
@@ -71,22 +76,31 @@ struct UserProfileView: View {
                                    detail: "Follow requests need approval before you can see private posts.")
                             .frame(height: 190)
                     } else {
+                        Picker("Profile videos", selection: $selectedCategory) {
+                            Label("Videos", systemImage: "play.rectangle").tag("videos")
+                            Label("Reposts", systemImage: "arrow.2.squarepath").tag("reposts")
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 20)
                         HStack {
-                            Image(systemName: "square.grid.3x3.fill")
-                            Text("VIDEOS").font(.system(size: 12, weight: .bold, design: .monospaced))
+                            Image(systemName: selectedCategory == "videos" ?
+                                  "square.grid.3x3.fill" : "arrow.2.squarepath")
+                            Text(selectedCategory == "videos" ? "VIDEOS" : "REPOSTED").font(.system(size: 12, weight: .bold, design: .monospaced))
                                 .tracking(1.4)
                             Spacer()
-                            Text("\(result.videos.count)")
+                            Text("\(displayedVideos.count)")
                                 .font(.caption).foregroundStyle(KovaTheme.muted)
                         }
                         .padding(.horizontal, 21)
-                        if result.videos.isEmpty {
+                        if displayedVideos.isEmpty {
                             EmptyState(icon: "play.square", title: "No videos yet",
-                                       detail: "Published videos from this creator will appear here.")
+                                       detail: selectedCategory == "videos" ?
+                                           "Published videos from this creator will appear here." :
+                                           "No public reposts yet.")
                                 .frame(height: 180)
                         } else {
                             LazyVGrid(columns: columns, spacing: 4) {
-                                ForEach(Array(result.videos.enumerated()), id: \.element.id) { index, video in
+                                ForEach(Array(displayedVideos.enumerated()), id: \.element.id) { index, video in
                                     Button {
                                         selectedVideo = video
                                     } label: {
@@ -132,7 +146,7 @@ struct UserProfileView: View {
             }
         }
         .sheet(item: $selectedVideo) { selected in
-            KovaProfileVideoViewer(videos: result?.videos ?? [], initialVideoID: selected.id)
+            KovaProfileVideoViewer(videos: displayedVideos, initialVideoID: selected.id)
                 .environmentObject(session)
         }
         .sheet(isPresented: $showMessages) {
@@ -152,6 +166,9 @@ struct UserProfileView: View {
         do {
             result = try await session.api.request("/api/users/\(handle)")
             isFollowing = result?.profile.isFollowing ?? false
+            if let page: OwnVideoPage = try? await session.api.request("/api/users/\(handle)/reposts") {
+                repostedVideos = page.items
+            }
         } catch { message = error.localizedDescription }
     }
     private func follow() async {

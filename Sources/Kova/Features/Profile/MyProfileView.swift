@@ -4,6 +4,11 @@ struct MyProfileView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var drawer: KovaNavigationState
     @State private var ownVideos: [KovaVideo] = []
+    @State private var repostedVideos: [KovaVideo] = []
+    @State private var selectedCategory = "videos"
+    private var displayedVideos: [KovaVideo] {
+        selectedCategory == "videos" ? ownVideos : repostedVideos
+    }
     @State private var selectedVideo: KovaVideo?
     @State private var errorMessage: String?
     @State private var deletingID: String?
@@ -35,22 +40,31 @@ struct MyProfileView: View {
                         }
                         .foregroundStyle(KovaTheme.foreground)
                         .padding(.horizontal, 20)
+                        Picker("Profile videos", selection: $selectedCategory) {
+                            Label("Videos", systemImage: "play.rectangle").tag("videos")
+                            Label("Reposts", systemImage: "arrow.2.squarepath").tag("reposts")
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 20)
                         HStack(spacing: 9) {
-                            Image(systemName: "play.rectangle.on.rectangle")
-                            Text("VIDEOS").font(.system(size: 13, weight: .bold, design: .monospaced))
+                            Image(systemName: selectedCategory == "videos" ?
+                                  "play.rectangle.on.rectangle" : "arrow.2.squarepath")
+                            Text(selectedCategory == "videos" ? "VIDEOS" : "REPOSTS").font(.system(size: 13, weight: .bold, design: .monospaced))
                                 .tracking(1.6)
                             Spacer()
-                            Text("\(ownVideos.count)").font(.caption).foregroundStyle(KovaTheme.muted)
+                            Text("\(displayedVideos.count)").font(.caption).foregroundStyle(KovaTheme.muted)
                         }
                         .padding(.horizontal, 21)
                         .padding(.top, 7)
-                        if ownVideos.isEmpty {
+                        if displayedVideos.isEmpty {
                             EmptyState(icon: "video", title: "No videos yet",
-                                       detail: "Your uploads will appear here, including videos only you can see.")
+                                       detail: selectedCategory == "videos" ?
+                                       "Your uploads will appear here, including private posts." :
+                                       "Repost a public video to show it on your profile.")
                                 .frame(height: 210)
                         } else {
                             LazyVGrid(columns: columns, spacing: 4) {
-                                ForEach(Array(ownVideos.enumerated()), id: \.element.id) { index, video in
+                                ForEach(Array(displayedVideos.enumerated()), id: \.element.id) { index, video in
                                     Button {
                                         if video.status == "approved" {
                                             selectedVideo = video
@@ -63,8 +77,14 @@ struct MyProfileView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .contextMenu {
-                                        Button("Delete video", systemImage: "trash", role: .destructive) {
-                                            deletingID = video.id
+                                        if selectedCategory == "videos" {
+                                            Button("Delete video", systemImage: "trash", role: .destructive) {
+                                                deletingID = video.id
+                                            }
+                                        } else {
+                                            Button("Undo repost", systemImage: "arrow.uturn.backward") {
+                                                Task { await removeRepost(video.id) }
+                                            }
                                         }
                                     }
                                 }
@@ -104,7 +124,7 @@ struct MyProfileView: View {
             }
             .sheet(item: $selectedVideo) { video in
                 KovaProfileVideoViewer(
-                    videos: ownVideos.filter { $0.status == "approved" },
+                    videos: displayedVideos.filter { $0.status == "approved" },
                     initialVideoID: video.id
                 )
                 .environmentObject(session)
@@ -129,6 +149,19 @@ struct MyProfileView: View {
         do {
             let page: OwnVideoPage = try await session.api.request("/api/videos/mine")
             ownVideos = page.items
+            if let handle = session.user?.handle,
+               let repostPage: OwnVideoPage = try? await session.api.request(
+                   "/api/users/\(handle)/reposts") {
+                repostedVideos = repostPage.items
+            }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func removeRepost(_ id: String) async {
+        do {
+            let _: RepostResult = try await session.api.request(
+                "/api/videos/\(id)/repost", method: "DELETE")
+            repostedVideos.removeAll { $0.id == id }
         } catch { errorMessage = error.localizedDescription }
     }
 
