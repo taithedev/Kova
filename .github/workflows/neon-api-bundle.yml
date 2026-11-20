@@ -1,0 +1,41 @@
+name: Bundle Kova Neon API
+on:
+  push:
+    branches: [main]
+    paths:
+      - "functions/kova/index.ts"
+      - "functions/kova/package.json"
+      - "functions/kova/tests/**"
+      - ".github/workflows/neon-api-bundle.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install dependencies
+        working-directory: functions/kova
+        run: npm install --no-audit --no-fund
+      - name: Verify feature and security tests
+        working-directory: functions/kova
+        run: npm test
+      - name: Build standalone Neon Function
+        working-directory: functions/kova
+        run: npm run build
+      - name: Commit generated bundle (no secrets)
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -f functions/kova/dist/index.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "Build standalone Kova Neon Function bundle [skip ci]"
+            git push origin HEAD:main
+          fi
