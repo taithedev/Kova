@@ -12,11 +12,28 @@ struct InboxView: View {
                             Image(systemName: "lock.shield").font(.system(size: 27))
                             VStack(alignment: .leading, spacing: 7) {
                                 Text("Privacy by default").font(.system(size: 17, weight: .bold))
-                                Text("Direct messaging is disabled. Activity and account notices appear here.")
+                                Text("Mutual-follow messaging is available with permission and age-group limits. Activity and account notices appear here.")
                                     .font(.system(size: 13)).foregroundStyle(KovaTheme.muted)
                             }
                         }
                     }
+                    NavigationLink { KovaMessagesView() } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                .font(.system(size: 25))
+                                .foregroundStyle(KovaTheme.accent)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Messages").font(.system(size: 18, weight: .bold))
+                                Text("Chat with approved mutual followers")
+                                    .font(.footnote).foregroundStyle(KovaTheme.muted)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .padding(16)
+                        .kovaGlass(radius: 17)
+                    }
+                    .foregroundStyle(KovaTheme.foreground)
                     SectionHeading(title: "Activity")
                     if notifications.isEmpty {
                         EmptyState(icon: "bell", title: "Nothing new", detail: "Your activity updates will appear here.")

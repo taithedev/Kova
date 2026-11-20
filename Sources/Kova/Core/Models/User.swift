@@ -7,6 +7,7 @@ struct KovaUser: Codable, Identifiable {
     let role: String?
     let isPrivate: Bool
     let allowMessages: Bool?
+    let ageRestricted: Bool?
     var bio: String?
     var avatarUrl: String?
     var isVerified: Bool?
