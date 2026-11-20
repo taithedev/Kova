@@ -23,20 +23,18 @@ struct NotificationsView: View {
                         .foregroundStyle(KovaTheme.muted)
                 }
                 ForEach(items) { item in
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: item.isRead ? "bell" : "bell.badge")
-                            .foregroundStyle(.white)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(item.body ?? item.kind).font(.subheadline)
-                            Text(item.createdAt.prefix(10))
-                                .font(.caption2).foregroundStyle(KovaTheme.muted)
-                        }
-                        Spacer()
-                        if !item.isRead {
-                            Circle().fill(.white).frame(width: 7, height: 7)
+                    Group {
+                        if let ticketID = item.ticketId,
+                           item.kind == "support_reply" || item.kind == "support_status" {
+                            NavigationLink {
+                                SupportTicketThreadView(id: ticketID)
+                            } label: {
+                                notificationRow(item)
+                            }
+                        } else {
+                            notificationRow(item)
                         }
                     }
-                    .padding(.vertical, 7)
                 }
             }
         }
@@ -45,6 +43,25 @@ struct NotificationsView: View {
         .background(KovaTheme.background)
         .task { await load() }
         .refreshable { await load() }
+    }
+    @ViewBuilder private func notificationRow(_ item: KovaNotification) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: item.ticketId != nil ? "lifepreserver" :
+                  (item.isRead ? "bell" : "bell.badge"))
+                .foregroundStyle(item.isRead ? KovaTheme.muted : KovaTheme.accent)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(item.body ?? item.kind)
+                    .font(.subheadline)
+                Text(String(item.createdAt.prefix(10)))
+                    .font(.caption2)
+                    .foregroundStyle(KovaTheme.muted)
+            }
+            Spacer()
+            if !item.isRead {
+                Circle().fill(KovaTheme.accent).frame(width: 7, height: 7)
+            }
+        }
+        .padding(.vertical, 7)
     }
     private func load() async {
         guard session.user != nil else { return }

@@ -318,7 +318,7 @@ async function markNotifications(req){
 }
 async function notifications(req){
  const me=await viewer(req);
- const rows=await db()`SELECT id,kind,body,is_read,created_at FROM notifications
+ const rows=await db()`SELECT id,kind,body,ticket_id,is_read,created_at FROM notifications
  WHERE recipient_id=${me.id} ORDER BY created_at DESC LIMIT 100`;
  return json({items:rows});
 }
@@ -754,8 +754,8 @@ async function tickets(req,tid){
  last_user_reply_at=CASE WHEN ${staffResponse} THEN last_user_reply_at ELSE now() END,
  updated_at=now() WHERE id=${tid}`;
  if(staffResponse){
-  await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
-  VALUES(${allowed[0].author_id},${me.id},'support_reply','You have a new reply on your support ticket.')`;
+  await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body,ticket_id)
+  VALUES(${allowed[0].author_id},${me.id},'support_reply','You have a new reply on your support ticket.',${tid})`;
  }
  if(reopened)await ticketEvent(tid,me.id,'reopened',{});
  return json({ok:true},201);
@@ -802,8 +802,8 @@ async function staffTickets(req,id,operation='status'){
  await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
  VALUES(${me.id},'ticket_'+b.status,'support_ticket',${id})`;
  if(b.status==='resolved'||b.status==='closed'){
-  await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
-  VALUES(${rows[0].author_id},${me.id},'support_status','A support ticket has been ' || ${b.status} || '.')`;
+  await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body,ticket_id)
+  VALUES(${rows[0].author_id},${me.id},'support_status','A support ticket has been ' || ${b.status} || '.',${id})`;
  }
  return json({id:rows[0].id,status:rows[0].status});
 }

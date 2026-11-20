@@ -4,6 +4,7 @@ struct KovaNotification: Codable, Identifiable {
     let kind:String
     let actorId:String?
     let videoId:String?
+    let ticketId:String?
     let body:String?
     let isRead:Bool
     let createdAt:String
