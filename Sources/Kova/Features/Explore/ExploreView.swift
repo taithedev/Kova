@@ -1,10 +1,18 @@
 import SwiftUI
 
+private struct KovaTrendingResult: Decodable { let topics: [KovaTrend] }
+private struct KovaTrend: Decodable, Identifiable {
+    let tag: String
+    let videos: Int
+    var id: String { tag }
+}
+
 struct ExploreView: View {
     @EnvironmentObject private var session: SessionStore
     @SceneStorage("kova.discover.search") private var query = ""
     @State private var result = SearchResponse(users: [], videos: [])
     @State private var searching = false
+    @State private var trending: [KovaTrend] = []
     @State private var errorMessage: String?
 
     var body: some View {
@@ -64,7 +72,32 @@ struct ExploreView: View {
                                 Spacer(minLength: 0)
                             }
                         }
-                        SectionHeading(title: "What moves you?", subtitle: "Look for videos about topics you enjoy")
+                        if !trending.isEmpty {
+                            SectionHeading(title: "Trending hashtags", subtitle: "Public posts from the past 30 days")
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 11) {
+                                    ForEach(trending) { item in
+                                        Button {
+                                            query = "#" + item.tag
+                                        } label: {
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                Text("#" + item.tag)
+                                                    .font(.system(size: 15, weight: .bold))
+                                                Text("\(item.videos) posts")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(KovaTheme.muted)
+                                            }
+                                            .frame(minWidth: 108, alignment: .leading)
+                                            .padding(13)
+                                            .background(KovaTheme.panel,
+                                                        in: RoundedRectangle(cornerRadius: 15))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        SectionHeading(title: "What moves you?", subtitle: "Find videos about topics you enjoy")
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                             ForEach(["Music", "Gaming", "Creativity", "Life", "Sports", "Art"], id: \.self) { topic in
                                 Button {
@@ -148,6 +181,7 @@ struct ExploreView: View {
                 .padding(.bottom, 25)
             }
             .background(KovaTheme.background)
+            .task { await loadTrends() }
             .task(id: query) {
                 guard query.count >= 2 else {
                     result = SearchResponse(users: [], videos: [])
@@ -156,6 +190,14 @@ struct ExploreView: View {
                 try? await Task.sleep(for: .milliseconds(350))
                 if !Task.isCancelled { await search() }
             }
+        }
+    }
+    private func loadTrends() async {
+        do {
+            let response: KovaTrendingResult = try await session.api.request("/api/discover/trending")
+            trending = response.topics
+        } catch {
+            // Hashtag discovery is optional while offline.
         }
     }
     private func search() async {

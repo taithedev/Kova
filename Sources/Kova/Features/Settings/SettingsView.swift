@@ -68,6 +68,9 @@ struct SettingsView: View {
                 NavigationLink { FollowRequestsView() } label: {
                     Label("Follow requests", systemImage: "person.2")
                 }
+                NavigationLink { KovaFeedPreferencesView() } label: {
+                    Label("For You controls", systemImage: "slider.horizontal.3")
+                }
                 NavigationLink { NotificationsView() } label: {
                     Label("Notifications", systemImage: "bell")
                 }
@@ -121,7 +124,7 @@ struct SettingsView: View {
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
             Section("ABOUT") {
-                LabeledContent("Version", value: "0.7.0")
+                LabeledContent("Version", value: "0.8.0")
                 Text("Kova is made for people. No automated follows, bots, or generated-content feeds.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
