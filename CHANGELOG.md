@@ -1,5 +1,14 @@
 # Kova release history
 
+## 0.7.0 — Publish now and moderate afterward
+
+- Verified @taithedev while keeping the Owner role.
+- Immediate publication of video, avatar, banner and eligible GIF uploads.
+- Staff takedown and report resolution with notices and audit logging.
+- Published/removed counts in staff and owner dashboards.
+- Preserved private account defaults and per-video visibility.
+
+
 ## 0.6.0 — Support 2.0 and resume exactly where you left off
 
 - Persisted selected tab across launches, remembered Explore search, Home feed mode/video position and Upload caption/visibility.

@@ -1,5 +1,15 @@
 # Kova — native iPhone social video app
 
+## Kova 0.7.0 — Instant posts, staff takedowns
+
+- Owner account @taithedev is verified with the blue checkmark in Neon.
+- Uploaded profile photos, static banners, GIF banners and videos publish immediately after server-side file checks, without an approval queue. Animated banners still require more than 500 accepted real followers.
+- Moderators can remove live videos and active profile media, handle reports and keep an audit history. Removed creators receive in-app notifications.
+- Accounts still begin private, videos retain their chosen public/followers/private visibility, and reporting and blocking remain available. Public posts are discoverable only from public accounts.
+- The native iPhone tab bar, persistent support ticket drafts, offline account cache, Liquid Glass appearance and accent color options remain.
+- No bots or fake followers were added. Instant user-generated publishing requires prompt human moderation and end-to-end on-device QA before broad release.
+- Builds are unsigned iPhone IPA files that must be signed to install.
+
 ## Kova 0.6.0 — Persistent app state and Support 2.0
 
 **Switch apps without losing your place:** The selected tab persists across app switches and relaunches. Home remembers the selected feed mode and video position; Discover remembers your search. Kova caches account data to avoid a blank sign-in screen during temporary connectivity loss, while still validating login with the live server. Foregrounding quietly refreshes your session when needed without replacing the main navigation view.

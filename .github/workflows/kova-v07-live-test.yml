@@ -1,0 +1,62 @@
+name: Kova 0.7 Live Publication Checks
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kova-v07-live-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check immediate publishing and staff moderation contracts
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const code=readFileSync('functions/kova/index.ts','utf8');
+          const upload=readFileSync('Sources/Kova/Features/Upload/UploadView.swift','utf8');
+          const edit=readFileSync('Sources/Kova/Features/Profile/EditProfileView.swift','utf8');
+          assert.match(code,/video_key,video_url,caption,duration_seconds,music_title,visibility,status/);
+          assert.match(code,/VALUES\(\$\{me.id\},\$\{key\},'private'.*'approved'\)/);
+          assert.match(code,/VALUES\(\$\{me.id\},\$\{kind\},\$\{key\},\$\{mime\},\$\{bytes\},'approved'\)/);
+          assert.match(code,/checkImageSignature\(key,mime\)/);
+          assert.match(code,/UPDATE videos SET status=\$\{status\}/);
+          assert.match(code,/UPDATE profile_media SET status='rejected'/);
+          assert.match(code,/staff_action_events/);
+          assert.match(code,/p\.is_private=false/);
+          assert.match(upload,/Publish video now/);
+          assert.match(edit,/go live immediately/);
+          console.log('PASS: publication and takedown contracts');
+          JS
+      - name: Verify live API denies anonymous staff actions
+        env:
+          BASE: https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech
+        run: |
+          node --input-type=module <<'JS'
+          const base=process.env.BASE;
+          async function check(path,expected,method='GET',data=null) {
+            const res=await fetch(base+path,{method,
+              headers:data?{'content-type':'application/json'}:{},
+              body:data?JSON.stringify(data):undefined});
+            console.log(method,path,res.status);
+            if(res.status!==expected)throw Error(method+' '+path+' expected '+expected+' got '+res.status);
+            return res.json();
+          }
+          const h=(await check('/api/health',200)).data;
+          if(h.version!=='0.7.0')throw Error('Backend version is stale');
+          await check('/api/health/db',200);
+          await check('/api/videos',401,'POST',{visibility:'public'});
+          await check('/api/profile/media/complete',401,'POST',{kind:'avatar'});
+          await check('/api/moderation/queue',401);
+          await check('/api/moderation/videos/00000000-0000-0000-0000-000000000000',401,'PATCH',{status:'rejected'});
+          await check('/api/moderation/reports/00000000-0000-0000-0000-000000000000',401,'PATCH',{status:'dismissed'});
+          await check('/api/staff/media',401);
+          await check('/api/staff/media/00000000-0000-0000-0000-000000000000',401,'PATCH',{status:'rejected'});
+          await check('/api/owner/overview',401);
+          console.log('PASS: live API 0.7 and access controls');
+          JS
