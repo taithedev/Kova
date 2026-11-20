@@ -12,7 +12,7 @@ struct KovaMark: View {
                     path.move(to: CGPoint(x: s * 0.29, y: s * 0.25))
                     path.addLine(to: CGPoint(x: s * 0.29, y: s * 0.75))
                     path.move(to: CGPoint(x: s * 0.67, y: s * 0.26))
-                    path.addLine(to: CGPoint(x: s * 0.395, y: s * 0.51))
+                    path.addLine(to: CGPoint(x: s * 0.365, y: s * 0.51))
                     path.addLine(to: CGPoint(x: s * 0.69, y: s * 0.75))
                 }
                 .stroke(.white, style: StrokeStyle(lineWidth: s * 0.093, lineCap: .round, lineJoin: .round))
