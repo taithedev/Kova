@@ -149,9 +149,10 @@ UNSIGNED-PAYLOAD`,m=Yr("sha256").update(v).digest("hex"),b=`AWS4-HMAC-SHA256
     VALUES(${t.id},${g},${m},${b},now()) RETURNING id
    )
    INSERT INTO support_ticket_messages(ticket_id,author_id,body,is_staff)
-   SELECT id,${t.id},${v},false FROM created RETURNING ticket_id AS id`;return await Xe(p[0].id,t.id,"created",{category:m}),j({id:p[0].id,status:"open"},201)}if(!ve(r))throw new x(400,"Invalid ticket");let s=await F()`SELECT id,author_id,subject,category,status,priority,assigned_to,created_at,updated_at,
-   (last_staff_reply_at IS NOT NULL AND (last_user_read_at IS NULL OR last_staff_reply_at>last_user_read_at)) AS unread
-   FROM support_tickets WHERE id=${r} AND (author_id=${t.id} OR ${n}) LIMIT 1`;if(!s.length)throw new x(404,"Support ticket not found");if(a.method==="GET"){let E=await F()`SELECT m.id,m.body,m.is_staff,m.created_at,p.display_name
+   SELECT id,${t.id},${v},false FROM created RETURNING ticket_id AS id`;return await Xe(p[0].id,t.id,"created",{category:m}),j({id:p[0].id,status:"open"},201)}if(!ve(r))throw new x(400,"Invalid ticket");let s=await F()`SELECT t.id,t.author_id,t.subject,t.category,t.status,t.priority,t.assigned_to,t.created_at,t.updated_at,p.handle,
+   (t.last_staff_reply_at IS NOT NULL AND (t.last_user_read_at IS NULL OR t.last_staff_reply_at>t.last_user_read_at)) AS unread
+   FROM support_tickets t JOIN profiles p ON p.id=t.author_id
+   WHERE t.id=${r} AND (t.author_id=${t.id} OR ${n}) LIMIT 1`;if(!s.length)throw new x(404,"Support ticket not found");if(a.method==="GET"){let E=await F()`SELECT m.id,m.body,m.is_staff,m.created_at,p.display_name
    FROM support_ticket_messages m JOIN profiles p ON p.id=m.author_id
    WHERE m.ticket_id=${r} ORDER BY m.created_at LIMIT 250`,g=await F()`SELECT e.id,e.event_type,e.details,e.created_at FROM support_ticket_events e
    WHERE e.ticket_id=${r} ORDER BY e.created_at DESC LIMIT 40`;return s[0].author_id===t.id?await F()`UPDATE support_tickets SET last_user_read_at=now() WHERE id=${r}`:n&&await F()`UPDATE support_tickets SET last_staff_read_at=now() WHERE id=${r}`,j({ticket:{...s[0],unread:!1},messages:E,events:g.map(v=>({...v,id:Number(v.id)}))})}if(s[0].status==="closed")throw new x(403,"Ticket is closed. Start a new ticket for more help.");await Ee(a,"support_reply",25,60);let i=await ue(a),l=String(i.message||"").trim();if(l.length<1||l.length>2e3)throw new x(400,"Reply must be 1\u20132000 characters");let o=n&&s[0].author_id!==t.id;await F()`INSERT INTO support_ticket_messages(ticket_id,author_id,body,is_staff)
