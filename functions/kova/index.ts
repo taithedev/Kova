@@ -233,8 +233,11 @@ async function userMe(req){
  if(input!==null && String(input).trim()){
   const raw=String(input).trim();
   if(raw.length>512)throw new AppError(400,'Avatar URL is too long');
-  try{const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||!u.hostname.includes('.')||u.port)throw Error('Invalid');avatar=u.toString();}
-  catch{throw new AppError(400,'Profile photo must be a valid HTTPS image link');}
+  if(/^kova-avatar:(violet|ocean|sunset|moss|rose|mono)$/.test(raw)){avatar=raw;}
+  else{
+   try{const u=new URL(raw);if(u.protocol!=='https:'||u.username||u.password||!u.hostname.includes('.')||u.port)throw Error('Invalid');avatar=u.toString();}
+   catch{throw new AppError(400,'Profile photo must use a Kova avatar or HTTPS image link');}
+  }
  }
  const result=await db()`UPDATE profiles SET display_name=${name},bio=${bio},is_private=${b.is_private},
  avatar_url=${avatar},banner_style=${banner},pronouns=${pronouns},updated_at=now()
