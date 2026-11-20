@@ -48,7 +48,7 @@ async function viewer(req,required=true){
  if(!token){if(required)throw new AppError(401,'Please sign in');return null;}
  if(token.length<20||token.length>256)throw new AppError(401,'Session expired');
  const hashed=digest(token);
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.age_band,p.age_restricted,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,
  s.id AS session_id,s.created_at AS session_created_at,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count
@@ -324,10 +324,132 @@ async function userMe(req){
  banner_key:b.reset_banner===true ? null : me.banner_key,
  banner_animated:b.reset_banner===true ? false : me.banner_animated}));
 }
+// Kova messages: opt-in, mutual follows, age-band matching, blocks and reports.
+// Restrict 13–15 and 16–17 accounts from messaging 18+ users. No unsolicited DMs.
+async function messageEligibility(me,targetID){
+ if(!validUUID(String(targetID||''))||targetID===me.id)
+  throw new AppError(400,'Choose another account');
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.avatar_url,p.age_band,p.allow_messages,p.age_restricted
+ FROM profiles p WHERE p.id=${targetID} AND p.disabled_at IS NULL LIMIT 1`;
+ if(!rows.length)throw new AppError(404,'Account not found');
+ const them=rows[0];
+ if(me.age_restricted||them.age_restricted)throw new AppError(403,'Messaging is restricted on this account');
+ if(!me.allow_messages||!them.allow_messages)throw new AppError(403,'Both users must enable private messaging');
+ if(me.age_band!==them.age_band)throw new AppError(403,'Messaging is limited to mutual followers in the same age group');
+ const following=await db()`SELECT count(*)::int AS n FROM follows
+ WHERE status='accepted' AND
+ ((follower_id=${me.id} AND following_id=${targetID})
+ OR (follower_id=${targetID} AND following_id=${me.id}))`;
+ if(Number(following[0]?.n)!==2)throw new AppError(403,'Messaging requires a mutual follow');
+ const blocks=await db()`SELECT 1 FROM blocks
+ WHERE (blocker_id=${me.id} AND blocked_id=${targetID})
+ OR (blocker_id=${targetID} AND blocked_id=${me.id}) LIMIT 1`;
+ if(blocks.length)throw new AppError(403,'Messaging unavailable');
+ return them;
+}
+async function messageOptions(req){
+ const me=await viewer(req);
+ if(req.method==='GET')return json({
+  allow_messages:me.allow_messages && !me.age_restricted,age_restricted:me.age_restricted,
+  restrictions:'Mutual accepted followers in the same age group. Both opt in.'
+ });
+ const body=await parseBody(req);
+ if(typeof body.allow_messages!=='boolean')throw new AppError(400,'Invalid message setting');
+ const allowed=Boolean(body.allow_messages&&!me.age_restricted);
+ const rows=await db()`UPDATE profiles SET allow_messages=${allowed},updated_at=now()
+ WHERE id=${me.id} RETURNING allow_messages,age_restricted`;
+ return json(rows[0]);
+}
+async function dmInbox(req){
+ const me=await viewer(req);
+ if(me.age_restricted||!me.allow_messages)return json({items:[]});
+ const rows=await db()`SELECT DISTINCT ON (partner.id)
+ partner.id,partner.handle,partner.display_name,partner.avatar_url,
+ dm.body AS last_message,dm.created_at AS last_message_at,dm.sender_id=${me.id} AS sent_by_me
+ FROM direct_messages dm JOIN profiles partner ON partner.id=
+ CASE WHEN dm.sender_id=${me.id} THEN dm.recipient_id ELSE dm.sender_id END
+ WHERE (dm.sender_id=${me.id} OR dm.recipient_id=${me.id})
+ AND dm.deleted_at IS NULL AND partner.disabled_at IS NULL
+ AND partner.allow_messages=true AND partner.age_restricted=false AND partner.age_band=${me.age_band}
+ AND EXISTS (SELECT 1 FROM follows f WHERE f.follower_id=${me.id} AND f.following_id=partner.id AND f.status='accepted')
+ AND EXISTS (SELECT 1 FROM follows f WHERE f.follower_id=partner.id AND f.following_id=${me.id} AND f.status='accepted')
+ AND NOT EXISTS (SELECT 1 FROM blocks b WHERE
+ (b.blocker_id=${me.id} AND b.blocked_id=partner.id)
+ OR (b.blocker_id=partner.id AND b.blocked_id=${me.id}))
+ ORDER BY partner.id,dm.created_at DESC LIMIT 80`;
+ rows.sort((a,b)=>new Date(b.last_message_at)-new Date(a.last_message_at));
+ return json({items:rows});
+}
+async function dmConversation(req,handle){
+ const me=await viewer(req);
+ const users=await db()`SELECT id FROM profiles WHERE handle=${handle} AND disabled_at IS NULL LIMIT 1`;
+ if(!users.length)throw new AppError(404,'Account not found');
+ const them=await messageEligibility(me,users[0].id);
+ if(req.method==='GET'){
+  const rows=await db()`SELECT id,sender_id,recipient_id,body,created_at FROM direct_messages
+  WHERE deleted_at IS NULL
+  AND ((sender_id=${me.id} AND recipient_id=${them.id}) OR
+  (sender_id=${them.id} AND recipient_id=${me.id}))
+  ORDER BY created_at DESC LIMIT 100`;
+  return json({user:{id:them.id,handle:them.handle,display_name:them.display_name,
+    avatar_url:them.avatar_url},messages:rows.reverse()});
+ }
+ await throttle(req,'dm_send',18,5);
+ const b=await parseBody(req);
+ const body=String(b.body||'').trim();
+ if(body.length<1||body.length>1000)throw new AppError(400,'Message must be 1–1000 characters');
+ // Reduce personal-information sharing and spam in teen chat.
+ if(/(?:https?:\/\/|www\.)/i.test(body)||/(?:\+?\d[\s().-]*){9,}/.test(body))
+ throw new AppError(400,'Links and phone numbers cannot be shared in Kova messages');
+ const rows=await db()`INSERT INTO direct_messages(sender_id,recipient_id,body)
+ VALUES(${me.id},${them.id},${body})
+ RETURNING id,sender_id,recipient_id,body,created_at`;
+ await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
+ VALUES(${them.id},${me.id},'message','New message from @' || ${me.handle})`;
+ return json(rows[0],201);
+}
+async function dmReport(req,id){
+ const me=await viewer(req);
+ if(!validUUID(id))throw new AppError(400,'Invalid message');
+ const messages=await db()`SELECT id,sender_id,recipient_id FROM direct_messages WHERE id=${id}
+ AND (sender_id=${me.id} OR recipient_id=${me.id}) LIMIT 1`;
+ if(!messages.length)throw new AppError(404,'Message not found');
+ const b=await parseBody(req);
+ if(!['bullying','sexual_content','violence','hate','spam','privacy','other'].includes(b.reason))
+ throw new AppError(400,'Invalid report reason');
+ const detail=String(b.detail||'').slice(0,500);
+ // Staff report queues use the same report IDs but never reveal the private DM text.
+ const rows=await db()`INSERT INTO reports(reporter_id,target_type,target_id,reason,detail)
+ VALUES(${me.id},'message',${id},${b.reason},${detail}) RETURNING id,status`;
+ return json(rows[0],201);
+}
+async function ageSafety(req,handle){
+ const me=await viewer(req);
+ if(!['owner','admin','moderator'].includes(me.role))
+ throw new AppError(403,'Staff access required');
+ const target=await db()`SELECT p.id,p.handle,p.age_restricted,COALESCE(r.role,p.role) AS role
+ FROM profiles p LEFT JOIN profile_staff_roles r ON r.profile_id=p.id
+ WHERE p.handle=${handle} AND p.disabled_at IS NULL LIMIT 1`;
+ if(!target.length)throw new AppError(404,'Account not found');
+ const person=target[0];
+ if(person.role==='owner'||person.id===me.id)throw new AppError(403,'Cannot change this account');
+ const b=await parseBody(req);
+ if(typeof b.age_restricted!=='boolean')throw new AppError(400,'Invalid safety restriction');
+ const updated=await db()`UPDATE profiles SET age_restricted=${b.age_restricted},
+ allow_messages=CASE WHEN ${b.age_restricted} THEN false ELSE allow_messages END,
+ updated_at=now() WHERE id=${person.id} RETURNING handle,age_restricted,allow_messages`;
+ await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id,detail)
+ VALUES(${me.id},'account_safety_restriction','profile',${person.id},
+ ${JSON.stringify({previous:person.age_restricted,next:b.age_restricted,reason:String(b.reason||'staff_safety').slice(0,120)})}::jsonb)`;
+ await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
+ VALUES(${person.id},${me.id},'account_safety',
+ 'Your messaging permissions were updated by Kova staff. You may contact support to appeal.')`;
+ return json(updated[0]);
+}
 async function profile(req,handle){
  const who=await viewer(req,false);
  const id=who?.id||'00000000-0000-0000-0000-000000000000';
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.is_private,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,COALESCE(pr.role,p.role) AS role,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.avatar_key,p.is_verified,p.is_private,p.age_restricted,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,COALESCE(pr.role,p.role) AS role,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count,
  EXISTS(SELECT 1 FROM follows f WHERE f.following_id=p.id AND f.follower_id=${id}::uuid AND f.status='accepted') AS is_following
@@ -657,7 +779,7 @@ async function staffUsers(req){
  const q=(new URL(req.url).searchParams.get('q')||'').trim().slice(0,35);
  if(q.length<2)return json({items:[]});
  const term='%'+q+'%';
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.is_verified,COALESCE(r.role,p.role) AS role
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.is_verified,p.age_restricted,COALESCE(r.role,p.role) AS role
  FROM profiles p LEFT JOIN profile_staff_roles r ON r.profile_id=p.id
  WHERE (p.handle ILIKE ${term} OR p.display_name ILIKE ${term}) AND p.disabled_at IS NULL
  ORDER BY p.handle LIMIT 30`;
@@ -1003,7 +1125,7 @@ async function handle(req){
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
  const method=req.method.toUpperCase();
  if(method==='GET'&&(pathname==='/'||pathname==='/api/health'))
- return json({service:'kova-api',status:'ok',version:'0.8.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
+ return json({service:'kova-api',status:'ok',version:'0.9.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
  if(method==='GET'&&pathname==='/api/health/db'){await db()`SELECT 1`;return json({status:'connected'});}
  if(method==='GET'&&pathname==='/api/auth/username-available'){
   const h=cleanHandle(url.searchParams.get('handle'));if(!validHandle(h))return json({available:false,reason:'invalid'});
@@ -1033,6 +1155,14 @@ async function handle(req){
  if(method==='PATCH'&&staffPriority)return staffTickets(req,staffPriority[1],'priority');
  if(method==='GET'&&pathname==='/api/owner/overview')return ownerOverview(req);
  if(method==='GET'&&pathname==='/api/staff/dashboard')return staffDashboard(req);
+ if((method==='GET'||method==='PATCH')&&pathname==='/api/account/messages')return messageOptions(req);
+ if(method==='GET'&&pathname==='/api/messages')return dmInbox(req);
+ const dmPath=pathname.match(/^\/api\/messages\/([a-z0-9_]{3,25})$/);
+ if(dmPath&&(method==='GET'||method==='POST'))return dmConversation(req,dmPath[1]);
+ const dmReportPath=pathname.match(/^\/api\/messages\/report\/([0-9a-f-]{36})$/);
+ if(dmReportPath&&method==='POST')return dmReport(req,dmReportPath[1]);
+ const safetyPath=pathname.match(/^\/api\/staff\/users\/([a-z0-9_]{3,25})\/safety$/);
+ if(safetyPath&&method==='PATCH')return ageSafety(req,safetyPath[1]);
  if(method==='GET'&&pathname==='/api/staff/users')return staffUsers(req);
  if(method==='GET'&&pathname==='/api/developer/overview')return developerOverview(req);
  const verifiedPath=pathname.match(/^\/api\/staff\/users\/([a-z0-9_]{3,25})\/verification$/);
