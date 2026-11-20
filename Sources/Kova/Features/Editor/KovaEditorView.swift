@@ -412,8 +412,8 @@ struct KovaEditorView: View {
                             Label("Import a sound I own", systemImage: "waveform.badge.plus")
                         }
                         .buttonStyle(.bordered)
-                        if let importedSoundTitle {
-                            Text("Selected file: " + importedSoundTitle)
+                        if let selectedFileName = importedSoundTitle {
+                            Text("Selected file: " + selectedFileName)
                                 .font(.footnote).foregroundStyle(KovaTheme.muted)
                             Button("Use an original Kova sound instead") {
                                 importedSoundTitle = nil
