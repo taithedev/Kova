@@ -9,6 +9,7 @@ struct EditProfileView: View {
     @State private var pronouns = ""
     @State private var avatarPreset = "mono"
     @State private var avatarURL = ""
+    @State private var avatarChanged = false
     @State private var bannerStyle = "ink"
     @State private var isPrivate = true
     @State private var resetBanner = false
@@ -53,6 +54,7 @@ struct EditProfileView: View {
                             Button {
                                 avatarPreset = preset
                                 avatarURL = ""
+                                avatarChanged = true
                             } label: {
                                 KovaAvatar(name: displayName.isEmpty ? "K" : displayName,
                                            size: 56, url: "kova-avatar:" + preset)
@@ -70,7 +72,10 @@ struct EditProfileView: View {
                 }
                 .disabled(uploadingMedia)
                 DisclosureGroup("Use an HTTPS profile photo link") {
-                    TextField("https://example.com/photo.jpg", text: $avatarURL)
+                    TextField("https://example.com/photo.jpg", text: Binding(
+                        get: { avatarURL },
+                        set: { avatarURL = $0; avatarChanged = true }
+                    ))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -197,6 +202,7 @@ struct EditProfileView: View {
         bannerStyle = user.bannerStyle ?? "ink"
         resetBanner = false
         isPrivate = user.isPrivate
+        avatarChanged = false
         if let url = user.avatarUrl, url.hasPrefix("kova-avatar:") {
             avatarPreset = String(url.dropFirst("kova-avatar:".count))
         } else {
@@ -254,7 +260,7 @@ struct EditProfileView: View {
             let payload = try session.api.encode(EditProfilePayload(
                 displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines),
                 bio: bio, pronouns: pronouns, bannerStyle: bannerStyle,
-                avatarUrl: avatar.isEmpty ? "kova-avatar:" + avatarPreset : avatar,
+                avatarUrl: avatarChanged ? (avatar.isEmpty ? "kova-avatar:" + avatarPreset : avatar) : nil,
                 isPrivate: isPrivate, resetBanner: resetBanner
             ))
             let updated: KovaUser = try await session.api.request("/api/users/me", method: "PATCH", json: payload)
@@ -270,7 +276,7 @@ private struct EditProfilePayload: Encodable {
     let bio: String
     let pronouns: String
     let bannerStyle: String
-    let avatarUrl: String
+    let avatarUrl: String?
     let isPrivate: Bool
     let resetBanner: Bool
 }
