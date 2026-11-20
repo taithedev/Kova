@@ -72,7 +72,7 @@ async function betterAuth(action,payload){
  let result;
  try{result=await res.json();}catch{result={};}
  if(!res.ok){
-  console.error('Neon Better Auth rejected request',action,res.status);
+  console.error('Neon Better Auth rejected request',action,res.status,'code:',String(result?.code||'unknown').slice(0,70),'message:',String(result?.message||'').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/g,'[email]').slice(0,180));
   if(action==='sign-in/email')throw new AppError(401,'Incorrect username or password');
   if(res.status===429)throw new AppError(429,'Please try again in a few minutes');
   throw new AppError(503,'Could not create your account right now. Please try again.');
