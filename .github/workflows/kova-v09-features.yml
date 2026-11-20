@@ -1,0 +1,74 @@
+name: Verify Kova 0.9 Profile and Safety Features
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kova-v09-features.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test source feature and privacy contracts
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const read=p=>readFileSync(p,'utf8');
+          const api=read('functions/kova/index.ts');
+          const profile=read('Sources/Kova/Features/Profile/UserProfileView.swift');
+          const mine=read('Sources/Kova/Features/Profile/MyProfileView.swift');
+          const viewer=read('Sources/Kova/Features/Profile/KovaProfileVideoViewer.swift');
+          const chat=read('Sources/Kova/Features/Inbox/KovaMessagesView.swift');
+          const editor=read('Sources/Kova/Features/Editor/KovaEditorView.swift');
+          const remix=read('Sources/Kova/Features/Editor/KovaRemixComposer.swift');
+          const updates=read('Sources/Kova/Services/Updates/KovaUpdateChecker.swift');
+          assert.match(api,/messageEligibility\(/);
+          assert.match(api,/me\.age_band!==them\.age_band/);
+          assert.match(api,/allow_messages/);
+          assert.match(api,/age_restricted/);
+          assert.match(api,/status='accepted'/);
+          assert.match(api,/direct_messages/);
+          assert.match(api,/video_mentions/);
+          assert.match(api,/source_video_id/);
+          assert.match(api,/v\.allow_remix=true/);
+          assert.match(api,/\/api\/videos/);
+          assert.match(profile,/KovaProfileVideoViewer/);
+          assert.match(mine,/KovaProfileVideoViewer/);
+          assert.match(viewer,/CommentsSheet/);
+          assert.match(viewer,/repost/);
+          assert.match(chat,/KovaMessagesSettingsView/);
+          assert.match(editor,/KovaOriginalSound/);
+          assert.match(remix,/AVMutableVideoComposition/);
+          assert.match(updates,/api\.github\.com\/repos\/taithedev\/Kova\/releases\/latest/);
+          console.log('PASS: 0.9 profiles, remix, messaging restrictions and update checker');
+          JS
+      - name: Verify production API version and protected message endpoints
+        env:
+          BASE: https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech
+        run: |
+          node --input-type=module <<'JS'
+          async function check(path,status,method='GET',data){
+            const res=await fetch(process.env.BASE+path,{method,
+              headers:data?{'content-type':'application/json'}:{},
+              body:data?JSON.stringify(data):undefined});
+            console.log(method,path,res.status);
+            if(res.status!==status)throw Error('Unexpected '+method+' '+path+': '+res.status);
+            return res.json();
+          }
+          const health=(await check('/api/health',200)).data;
+          if(health.version!=='0.9.0')throw Error('Stale API');
+          await check('/api/health/db',200);
+          await check('/api/messages',401);
+          await check('/api/account/messages',401);
+          await check('/api/account/messages',401,'PATCH',{allow_messages:true});
+          await check('/api/messages/alice',401);
+          await check('/api/messages/alice',401,'POST',{body:'Hello'});
+          await check('/api/staff/users/alice/safety',401,'PATCH',{age_restricted:true});
+          await check('/api/videos/00000000-0000-0000-0000-000000000000/remix-permission',401,'PATCH',{allow_remix:true});
+          console.log('PASS: live 0.9 protected endpoints');
+          JS

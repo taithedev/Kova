@@ -1,5 +1,18 @@
 # Kova release history
 
+## 0.9.0 — Profiles, sound studio, remix and safer chats
+
+- Open playable grids from own and other users' profiles with real likes, comments, saves, reposts, and follows.
+- Separate creator avatar navigation and larger independent follow controls.
+- Caption, video description, hashtags, user mentions and credited sound metadata.
+- Original locally synthesized sounds and imported authorized soundtracks.
+- Creator-consented Stitch and side-by-side Duet rendered locally through AVFoundation.
+- Private, opt-in mutual-follow messaging restricted to matching age groups; message reports, block checks and server rate limiting.
+- Staff safety restriction without modifying profile privacy; logged actions and appeals via support.
+- Expanded accent colors and optional GitHub Release update checker (no silent IPA installation).
+- iOS 0.9.0, build 10.
+
+
 ## 0.8.0 — Native camera, edited exports, reposting, smarter discovery
 
 - AVFoundation camera with recording length, countdown, flash control, flip, framing grid and preview presets.

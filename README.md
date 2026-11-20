@@ -1,5 +1,19 @@
 # Kova — native iPhone social video app
 
+## Kova 0.9.0 — Interactive creator profiles, opt-in DMs, remix studio
+
+**Tap a creator photo or username** on a feed video to open that real user profile; the heart still likes the video. A much larger, separate Follow button is available in video actions and on profiles. Creator and own-profile grids now open a paged full-screen viewer with playback, likes, comments, bookmarks, reposts, reports and creator navigation. Private posts can be viewed only by their author or permitted followers; removed videos stay unavailable. No fake interactions or follower counts.
+
+**Create:** captions of up to 2,200 characters, a separate video description (up to 1,200 characters), #hashtags, @mentions with notifications and server-side block checks, original audio attribution, an explicit opt-in for allowing others to remix public videos, plus local media editing. Kova Original loops (Orbit, Shimmer, Pulse, Drift) are synthesized locally; importing audio is allowed only for content the creator owns or is licensed to use. The editor exports a real MP4 with trim, color filters, text, emoji stickers and sound mixing. The app supports Stitch (creator clip preceded by up to four seconds of an opted-in public video) and side-by-side Duet, with source attribution validated again on upload. Hardware and real-device testing remain necessary.
+
+**Messaging safety:** Members can enable messaging, which starts off. Both must opt in, mutually follow each other, and be in the same age band (13–15, 16–17, or 18+). Blocked and safety-restricted accounts cannot chat. Links and phone numbers are blocked in chat. Messages can be reported to moderators. No unrestricted adult-to-minor messaging. Kova is a 13+ service and does not support 18+ video content; staff age-safety restrictions disable messaging without changing whether a profile is private or public.
+
+**Owner and moderation:** Owner, Admin and Moderator can apply/restore audited messaging safety restrictions. Verification remains a separate, audited Owner/Admin permission. Role pages are only shown to authenticated staff, and rights are checked server-side.
+
+**Style and releases:** Sixteen accent colors, polished scrollable color picker, native system tab bar and a three-line page drawer. A GitHub Release checker can notify members about new Kova releases on launch or manually. **iOS cannot silently install or sign an unsigned IPA**; the user follows the linked signed update instructions. No third-party copyrighted sound catalog is bundled.
+
+**Not fully implemented:** Rich clip transitions, full multi-track animated effects, licensed sound marketplace, APNs push delivery, always-on moderation automation, and reliable resume-across-restart for uploads. This iPhone build requires signing and thorough end-to-end verification with real accounts before public launch.
+
 ## Kova 0.8.0 — Create, discover and manage
 
 **Native Kova Camera (iPhone):** AVFoundation portrait capture with microphone permission, timed recording up to 120 seconds, countdown, front/back camera, torch on supported devices, framing grid, and selectable visual presets. The chosen preset passes into the clip editor.
