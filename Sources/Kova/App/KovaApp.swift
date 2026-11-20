@@ -4,6 +4,7 @@ import SwiftUI
     @StateObject private var session = SessionStore()
     @StateObject private var support = KovaSupportStore()
     @StateObject private var updates = KovaUpdateChecker()
+    @StateObject private var remix = KovaRemixCoordinator()
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("kova.appearance") private var appearance = "dark"
     @AppStorage("kova.accent") private var accent = "classic"
@@ -19,6 +20,7 @@ import SwiftUI
                 .environmentObject(session)
                 .environmentObject(support)
                 .environmentObject(updates)
+                .environmentObject(remix)
                 .preferredColorScheme(preferredMode)
                 .tint(KovaTheme.accent)
                 .task {
