@@ -179,6 +179,27 @@ async function signVideoRows(rows){
 // Transparent, bounded ranking: recency + capped engagement, with small
 // follow signals and fairer exposure for newer creators. No watch-time or
 // sensitive-trait profiling. Members can hide posts via "Not interested".
+async function trending(req){
+ const topics=await db()`SELECT lower(tags.parts[1]) AS tag,count(*)::int AS videos
+ FROM videos v JOIN profiles p ON p.id=v.author_id
+ CROSS JOIN LATERAL (
+  SELECT regexp_matches(v.caption,'#([A-Za-z0-9_]{2,24})','g') AS parts
+ ) tags
+ WHERE v.status='approved' AND v.visibility='public' AND p.is_private=false
+ AND p.disabled_at IS NULL AND v.created_at>now()-interval '30 days'
+ GROUP BY lower(tags.parts[1])
+ ORDER BY count(*) DESC,lower(tags.parts[1]) ASC LIMIT 15`;
+ return json({topics});
+}
+async function feedPreferences(req){
+ const me=await viewer(req);
+ if(req.method==='DELETE'){
+  const removed=await db()`DELETE FROM video_not_interested WHERE user_id=${me.id} RETURNING video_id`;
+  return json({reset:true,cleared:removed.length});
+ }
+ const rows=await db()`SELECT count(*)::int AS hidden_count FROM video_not_interested WHERE user_id=${me.id}`;
+ return json(rows[0]);
+}
 async function feed(req){
  const u=new URL(req.url);
  const mode=u.searchParams.get('mode')||'for-you';
@@ -1018,6 +1039,8 @@ async function handle(req){
  if(method==='PATCH'&&verifiedPath)return staffChange(req,verifiedPath[1],'verification');
  const rolePath=pathname.match(/^\/api\/staff\/users\/([a-z0-9_]{3,25})\/role$/);
  if(method==='PATCH'&&rolePath)return staffChange(req,rolePath[1],'role');
+ if(method==='GET'&&pathname==='/api/discover/trending')return trending(req);
+ if((method==='GET'||method==='DELETE')&&pathname==='/api/feed/preferences')return feedPreferences(req);
  if(method==='GET'&&pathname==='/api/feed')return feed(req);
  if(method==='GET'&&pathname==='/api/search')return search(req);
  if(method==='GET'&&pathname==='/api/users/me/stats')return accountStats(req);
