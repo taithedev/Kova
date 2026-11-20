@@ -13,5 +13,16 @@ struct KovaUser: Codable, Identifiable {
     var followersCount: Int?
     var followingCount: Int?
     var isFollowing: Bool?
+    var bannerStyle: String?
+    var pronouns: String?
+    var staffTitle: String {
+        switch role {
+        case "owner": return "OWNER"
+        case "admin": return "ADMIN"
+        case "moderator": return "STAFF"
+        case "developer": return "DEVELOPER"
+        default: return ""
+        }
+    }
 }
 struct AuthResponse: Decodable { let user: KovaUser; let token: String }
