@@ -426,7 +426,7 @@ struct KovaEditorView: View {
                     }
     }
 
-    private var exportControls: some View {
+    @ViewBuilder private var exportControls: some View {
                     Toggle(isOn: $mute) {
                         Label("Remove original video audio", systemImage: "speaker.slash")
                     }
