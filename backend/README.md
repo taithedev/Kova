@@ -1,9 +1,10 @@
-# Kova API (Next.js / Neon)
+# Legacy Next.js backend (not Kova's active API)
 
-`cp .env.example .env.local` and configure private backend secrets. Run `npm install && npm run dev`. Point Kova's iOS `AppConfig.apiBaseURL` at this HTTPS deployment. Vercel deploys `backend/` as Root Directory.
+Kova 0.3.0 now uses the standalone **Neon Function** source at `functions/kova/index.ts`, deployed to:
+`https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech`
 
-The iPhone app **never** connects to Neon PostgreSQL directly. Access tokens are stored in Keychain, and the API checks every protected operation. Objects upload using short-lived signed S3 PUT URLs, then stay pending until a moderator approves them.
+**Do not point current Kova clients at this older Next.js server.** Its earlier password/scrypt routes are not synchronized with the Neon Managed Better Auth account integration. The active Kova API creates and verifies account credentials through Neon Managed Better Auth; the native app uses that Neon Function automatically.
 
-Routes include `/api/auth/{register,login,me,logout}`, `/api/feed`, `/api/videos`, `/api/videos/upload-url`, `/api/videos/mine`, `/api/videos/[id]/{like,bookmark,comments}`, `/api/users/[handle]`, `/api/users/[handle]/follow`, `/api/users/me`, `/api/users/me/block`, `/api/search`, `/api/reports`, `/api/notifications`, `/api/moderation/queue` and moderator actions.
+This folder is retained only for historical reference during migration. It is not deployed in the latest Kova release. Neon Function changes require the `Bundle Kova Neon API` CI workflow and a function deployment, not simply a Next.js build.
 
-**Not yet production-ready:** email/password recovery, strong anti-bot and abuse screening, consent flow for younger children, verified upload content scanning, full moderation tooling, CDN transcode pipeline, push delivery, real-time chat, LIVE, music licensing and auditing. Don't publicly launch until these are complete and reviewed.
+Never expose Neon database/storage credentials inside the iPhone app or the repository. Teen privacy, content moderation, safe account recovery, upload scanning and production security checks remain required before public launch.

@@ -1,5 +1,25 @@
 # Kova release history
 
+## 0.3.0 — Live accounts, easier signup, and account tools
+
+- Neon Managed Better Auth enabled on Kova; live Neon Function API deployed.
+- Verified register/login/profile/logout/DB responses via a live GitHub Actions smoke test.
+- Removed API URL setup from the iPhone experience. One fixed public Kova service URL.
+- Username and password signup (date of birth only for 13+ eligibility); username-availability checks.
+- Show/hide password, confirmation, length feedback and inline input validation.
+- Better app launch restore, Keychain session retention after network outages and error explanations.
+- New Account Center: activity counts, active sessions, sign out other sessions, blocked users and unblock.
+- Notification history and mark-all-read actions.
+- Accept or decline follow requests; pending state.
+- Delete your own videos and comments; refresh video list.
+- Report and block user profiles, safety confirmation.
+- Pull to refresh and pagination in vertical feed; empty-feed retry.
+- Enhanced teen-private account settings and profile editing.
+- Backend Following feed now supports approved followers-only videos with accepted follow relationships.
+- Black/white UI remains; uploads retain their original color.
+
+**Known limits:** private video upload credentials and real-device media testing still outstanding. Managed Better Auth's internal identities do not offer an email recovery address, so password reset requires further design. This is not yet a public-launch-ready platform.
+
 ## 0.2.1 — In-app server connection
 
 - Configure the public HTTPS Kova API origin inside the sign-in screen; no Swift rebuild required after hosting.
