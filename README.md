@@ -1,5 +1,21 @@
 # Kova — native iPhone social video app
 
+## Kova 0.8.0 — Create, discover and manage
+
+**Native Kova Camera (iPhone):** AVFoundation portrait capture with microphone permission, timed recording up to 120 seconds, countdown, front/back camera, torch on supported devices, framing grid, and selectable visual presets. The chosen preset passes into the clip editor.
+
+**Actual edited exports:** Open recordings or imported MOV/MP4 files in the editor. Trim start/end, apply six Core Image filters, render text overlays and emoji stickers into the video, or mute original audio. Edits are exported as a separate MP4 using AVFoundation and uploaded with the existing 100 MB limit. A commercial/licensed sound library, clip transitions, Duet/Stitch compositor and live multi-clip recording are not included yet; don't advertise these as finished.
+
+**Reposts and a user-controlled feed:** Real, authenticated repost and undo-repost buttons. Following sees posts reposted by accounts the viewer follows, but only if the original post is public. "Not interested" hides a video from recommendations. A For You Controls page explains recency, bounded community engagement, followed creators and author diversity, and allows resetting hidden-video choices. No tracking of sensitive traits or watch-time profiling is required.
+
+**Trending discovery:** Trends derive from real hashtags in published public videos over the previous 30 days. They appear as tappable search chips; no fabricated trends.
+
+**Navigation:** A responsive three-line side drawer can take users to Home, Discover, Camera/Create, Inbox, Profile, settings and help, with staff/owner tools visible only to signed-in authorized roles. Owner/Admin can open the new Verification Center to search, verify and unverify other accounts; authorization and audit enforcement remains server-side.
+
+**Retained:** The app remembers the selected tab and feed position, keeps support drafts, and retains initial private-account defaults, content reporting, creator blocking, staff takedowns, real follower numbers, and native Liquid Glass (iOS 26+) aesthetics.
+
+**Reality check:** This is a functional development build, not a production-complete TikTok replacement. Camera, editor export, repost visibility and feed ranking require testing with real devices and multiple accounts. APNs push delivery, licenses for popular music, duet/stitch editing, polished transitions, multi-clip composing, creator playlists and upload-resume servers require additional implementation. App Store submission requires proper moderation processes for teen communities.
+
 ## Kova 0.7.0 — Instant posts, staff takedowns
 
 - Owner account @taithedev is verified with the blue checkmark in Neon.

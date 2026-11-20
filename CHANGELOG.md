@@ -1,5 +1,17 @@
 # Kova release history
 
+## 0.8.0 — Native camera, edited exports, reposting, smarter discovery
+
+- AVFoundation camera with recording length, countdown, flash control, flip, framing grid and preview presets.
+- Editor for actual trimming, six color filters, text, emoji stickers and mute, with MP4 export.
+- Post/undo repost to followers without exposing private videos.
+- For You feed ranking with bounded engagement signals, freshness and creator variety, plus Not Interested and reset controls.
+- Real 30-day hashtag trends in Discover.
+- Animated three-line drawer with all accessible sections and role-aware staff links.
+- Dedicated Verification Center for Owner and Admin, with server-side access checks and audit.
+- Version 0.8.0, build 9.
+
+
 ## 0.7.0 — Publish now and moderate afterward
 
 - Verified @taithedev while keeping the Owner role.

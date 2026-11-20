@@ -1,0 +1,74 @@
+name: Verify Kova 0.8 Video Creator Features
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kova-v08-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source integration
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const read=p=>readFileSync(p,'utf8');
+          const api=read('functions/kova/index.ts');
+          const camera=read('Sources/Kova/Features/Capture/KovaRecorderView.swift');
+          const editor=read('Sources/Kova/Features/Editor/KovaEditorView.swift');
+          const menu=read('Sources/Kova/App/KovaSidebar.swift');
+          const feed=read('Sources/Kova/Features/Feed/FeedView.swift');
+          const upload=read('Sources/Kova/Features/Upload/UploadView.swift');
+          const model=read('Sources/Kova/Core/Models/Video.swift');
+          const verify=read('Sources/Kova/Features/Settings/KovaVerificationCenterView.swift');
+          assert.match(api,/video_not_interested/);
+          assert.match(api,/video_reposts/);
+          assert.match(api,/author_slot<=3/);
+          assert.match(api,/\/api\/discover\/trending/);
+          assert.match(api,/status='approved'/);
+          assert.match(api,/v.visibility='public'/);
+          assert.match(camera,/AVCaptureMovieFileOutput/);
+          assert.match(camera,/AVCaptureVideoPreviewLayer/);
+          assert.match(editor,/AVAssetExportSession/);
+          assert.match(editor,/applyingCIFiltersWithHandler/);
+          assert.match(editor,/makeOverlay/);
+          assert.match(upload,/KovaRecorderView/);
+          assert.match(upload,/KovaEditorView/);
+          assert.match(menu,/case \.verify: KovaVerificationCenterView/);
+          assert.match(feed,/notInterested/);
+          assert.match(model,/repostsCount/);
+          assert.match(verify,/\/api\/staff\/users\/.*\/verification/);
+          console.log('PASS: Kova v0.8 source integrations');
+          JS
+      - name: Verify real API access control and health
+        env:
+          KOVA_API: https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech
+        run: |
+          node --input-type=module <<'JS'
+          const base=process.env.KOVA_API;
+          async function status(path,expected,method='GET',body){
+            const r=await fetch(base+path,{method,redirect:'manual',
+             headers:body?{'content-type':'application/json'}:{},
+             body:body?JSON.stringify(body):undefined});
+            console.log(method,path,r.status);
+            if(r.status!==expected)throw new Error('Bad '+path+': '+r.status);
+            return r.json();
+          }
+          const h=(await status('/api/health',200)).data;
+          if(h.version!=='0.8.0')throw new Error('Stale API version '+h.version);
+          await status('/api/health/db',200);
+          await status('/api/discover/trending',200);
+          await status('/api/feed?mode=for-you',200);
+          await status('/api/feed/preferences',401);
+          await status('/api/videos/00000000-0000-0000-0000-000000000000/repost',401,'POST');
+          await status('/api/videos/00000000-0000-0000-0000-000000000000/not-interested',401,'POST');
+          await status('/api/staff/users?q=alice',401);
+          await status('/api/staff/users/alice/verification',401,'PATCH',{is_verified:true});
+          console.log('PASS: Kova v0.8 live API and privileged-route access controls');
+          JS
