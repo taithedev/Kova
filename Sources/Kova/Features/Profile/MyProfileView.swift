@@ -3,7 +3,8 @@ import SwiftUI
 struct MyProfileView: View {
     @EnvironmentObject private var session: SessionStore
     @EnvironmentObject private var drawer: KovaNavigationState
-    @State private var ownVideos: [OwnVideo] = []
+    @State private var ownVideos: [KovaVideo] = []
+    @State private var selectedVideo: KovaVideo?
     @State private var errorMessage: String?
     @State private var deletingID: String?
     private let columns = [GridItem(.flexible(), spacing: 4),
@@ -50,13 +51,21 @@ struct MyProfileView: View {
                         } else {
                             LazyVGrid(columns: columns, spacing: 4) {
                                 ForEach(Array(ownVideos.enumerated()), id: \.element.id) { index, video in
-                                    Menu {
-                                        Text(video.status == "pending" ? "Awaiting review" : video.status.capitalized)
+                                    Button {
+                                        if video.status == "approved" {
+                                            selectedVideo = video
+                                        } else {
+                                            errorMessage = "This video was removed or is unavailable."
+                                        }
+                                    } label: {
+                                        KovaProfileVideoTile(caption: video.caption,
+                                            thumbnail: video.thumbnailUrl, index: index, status: video.status)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .contextMenu {
                                         Button("Delete video", systemImage: "trash", role: .destructive) {
                                             deletingID = video.id
                                         }
-                                    } label: {
-                                        KovaProfileVideoTile(caption: video.caption, index: index, status: video.status)
                                     }
                                 }
                             }
@@ -93,6 +102,13 @@ struct MyProfileView: View {
                     .accessibilityLabel("Open Kova navigation")
                 }
             }
+            .sheet(item: $selectedVideo) { video in
+                KovaProfileVideoViewer(
+                    videos: ownVideos.filter { $0.status == "approved" },
+                    initialVideoID: video.id
+                )
+                .environmentObject(session)
+            }
             .task { await load() }
             .refreshable { await load() }
             .confirmationDialog("Delete this video?", isPresented: Binding(
@@ -125,12 +141,4 @@ struct MyProfileView: View {
     }
 }
 private struct DeletedKovaVideo: Decodable { let deleted: Bool }
-struct OwnVideo: Decodable, Identifiable {
-    let id: String
-    let caption: String
-    let videoUrl: String
-    let status: String
-    let visibility: String
-    let createdAt: String
-}
-struct OwnVideoPage: Decodable { let items: [OwnVideo] }
+struct OwnVideoPage: Decodable { let items: [KovaVideo] }

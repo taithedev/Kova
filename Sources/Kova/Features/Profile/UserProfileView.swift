@@ -8,6 +8,8 @@ struct UserProfileView: View {
     @State private var isFollowing = false
     @State private var requested = false
     @State private var report = false
+    @State private var selectedVideo: KovaVideo?
+    @State private var showMessages = false
     @State private var confirmBlock = false
     @State private var didBlock = false
     private let columns = [GridItem(.flexible(), spacing: 4),
@@ -25,11 +27,32 @@ struct UserProfileView: View {
                     KovaProfileHeader(profile: result.profile)
                     HStack(spacing: 10) {
                         if session.user?.handle != handle {
-                            GradientButton(requested ? "Requested" : (isFollowing ? "Following" : "Follow"),
-                                           icon: requested ? "clock" : (isFollowing ? "checkmark" : "plus")) {
+                            Button {
                                 if !requested { Task { await follow() } }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: requested ? "clock" : (isFollowing ? "checkmark" : "person.badge.plus.fill"))
+                                        .font(.system(size: 19, weight: .semibold))
+                                    Text(requested ? "Requested" : (isFollowing ? "Following" : "Follow"))
+                                        .font(.system(size: 17, weight: .bold))
+                                }
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(KovaTheme.accent, in: RoundedRectangle(cornerRadius: 17))
                             }
+                            .buttonStyle(.plain)
                             .disabled(requested)
+                            Button {
+                                showMessages = true
+                            } label: {
+                                Image(systemName: "message.fill")
+                                    .font(.system(size: 19, weight: .semibold))
+                                    .frame(width: 56, height: 56)
+                                    .kovaGlass(radius: 15)
+                            }
+                            .foregroundStyle(KovaTheme.foreground)
+                            .accessibilityLabel("Message @" + handle)
                         }
                         Button {
                             report = true
@@ -59,13 +82,19 @@ struct UserProfileView: View {
                         .padding(.horizontal, 21)
                         if result.videos.isEmpty {
                             EmptyState(icon: "play.square", title: "No videos yet",
-                                       detail: "Approved posts from this creator will appear here.")
+                                       detail: "Published videos from this creator will appear here.")
                                 .frame(height: 180)
                         } else {
                             LazyVGrid(columns: columns, spacing: 4) {
                                 ForEach(Array(result.videos.enumerated()), id: \.element.id) { index, video in
-                                    KovaProfileVideoTile(caption: video.caption,
-                                                         thumbnail: video.thumbnailUrl, index: index)
+                                    Button {
+                                        selectedVideo = video
+                                    } label: {
+                                        KovaProfileVideoTile(caption: video.caption,
+                                                             thumbnail: video.thumbnailUrl, index: index)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Play " + video.caption)
                                 }
                             }
                             .padding(.horizontal, 5)
@@ -100,6 +129,15 @@ struct UserProfileView: View {
                         Image(systemName: "ellipsis").foregroundStyle(KovaTheme.foreground)
                     }
                 }
+            }
+        }
+        .sheet(item: $selectedVideo) { selected in
+            KovaProfileVideoViewer(videos: result?.videos ?? [], initialVideoID: selected.id)
+                .environmentObject(session)
+        }
+        .sheet(isPresented: $showMessages) {
+            NavigationStack {
+                KovaConversationView(handle: handle)
             }
         }
         .sheet(isPresented: $report) {
