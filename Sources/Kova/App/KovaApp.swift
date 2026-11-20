@@ -2,6 +2,8 @@ import SwiftUI
 
 @main struct KovaApp: App {
     @StateObject private var session = SessionStore()
+    @StateObject private var support = KovaSupportStore()
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("kova.appearance") private var appearance = "dark"
     @AppStorage("kova.accent") private var accent = "classic"
 
@@ -14,9 +16,21 @@ import SwiftUI
         WindowGroup {
             AppRouter()
                 .environmentObject(session)
+                .environmentObject(support)
                 .preferredColorScheme(preferredMode)
                 .tint(KovaTheme.accent)
-                .task { await session.restore() }
+                .task {
+                    await session.restore()
+                    support.bind(account: session.user?.id)
+                }
+                .onChange(of: session.user?.id) { _, currentAccount in
+                    support.bind(account: currentAccount)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        Task { await session.refreshIfNeeded() }
+                    }
+                }
         }
     }
 }

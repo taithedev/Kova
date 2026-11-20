@@ -9,7 +9,7 @@ struct AppRouter: View {
                     KovaTheme.background.ignoresSafeArea()
                     VStack(spacing: 20) {
                         KovaMark(size: 72)
-                        ProgressView().tint(.white)
+                        ProgressView().tint(KovaTheme.accent)
                     }
                 }
             } else if session.user != nil || session.isPreviewing {

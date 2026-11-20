@@ -64,7 +64,7 @@ struct AuthView: View {
                     .foregroundStyle(KovaTheme.foreground)
                     .font(.system(size: 14, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    Text("Kova accounts are for ages 13+. Teen accounts stay private, and direct messaging is disabled.")
+                    Text("Kova accounts are for ages 13+. Profiles start private and can be made public later. Direct messaging is disabled.")
                         .foregroundStyle(KovaTheme.muted)
                         .font(.system(size: 12))
                         .multilineTextAlignment(.center)

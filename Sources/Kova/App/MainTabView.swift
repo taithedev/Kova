@@ -3,7 +3,7 @@ import SwiftUI
 /// Only ONE navigation bar. SwiftUI's real system TabView provides native
 /// iOS 26 Liquid Glass on supported devices; no manually drawn duplicate.
 struct MainTabView: View {
-    @State private var selected = 0
+    @AppStorage("kova.selectedTab") private var selected = 0
 
     var body: some View {
         TabView(selection: $selected) {
@@ -24,5 +24,6 @@ struct MainTabView: View {
                 .tag(4)
         }
         .tint(KovaTheme.accent)
+        .animation(.easeOut(duration: 0.2), value: selected)
     }
 }
