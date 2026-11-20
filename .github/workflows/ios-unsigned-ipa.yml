@@ -1,0 +1,80 @@
+name: Build Kova iPhone IPA (unsigned)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Support/**'
+      - 'Assets/**'
+      - 'project.yml'
+      - 'Package.swift'
+      - 'xtool.yml'
+      - '.github/workflows/ios-unsigned-ipa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Xcode
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate iPhone app icon asset catalog
+        run: |
+          mkdir -p GeneratedAssets/KovaAssets.xcassets/AppIcon.appiconset
+          cp Assets/AppIcon.png GeneratedAssets/KovaAssets.xcassets/AppIcon.appiconset/AppIcon.png
+          python3 - <<'PY'
+          import json, pathlib
+          dst = pathlib.Path('GeneratedAssets/KovaAssets.xcassets/AppIcon.appiconset/Contents.json')
+          dst.write_text(json.dumps({'images': [{'filename':'AppIcon.png','idiom':'universal','platform':'ios','size':'1024x1024'}], 'info': {'author':'xcode','version':1}}))
+          PY
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+      - name: Build device app without signing
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Kova.xcodeproj \
+            -scheme Kova \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/KovaDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            clean build 2>&1 | tee "$RUNNER_TEMP/kova-build.log" | tail -110
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/KovaDerivedData/Build/Products/Release-iphoneos/Kova.app"
+          test -d "$app"
+          test -f "$app/Kova"
+          mkdir -p "$RUNNER_TEMP/KovaPayload/Payload" artifacts
+          cp -R "$app" "$RUNNER_TEMP/KovaPayload/Payload/Kova.app"
+          (cd "$RUNNER_TEMP/KovaPayload" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/artifacts/Kova-unsigned.ipa" Payload)
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist"
+          /usr/bin/file "$app/Kova"
+          unzip -t artifacts/Kova-unsigned.ipa | tail -2
+          ls -lh artifacts/Kova-unsigned.ipa
+      - name: Upload Kova IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kova-iPhone-unsigned-IPA
+          path: artifacts/Kova-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+      - name: Attach failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kova-build-log
+          path: ${{ runner.temp }}/kova-build.log
+          if-no-files-found: ignore
+          retention-days: 7
