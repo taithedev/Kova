@@ -1,5 +1,19 @@
 # Kova release history
 
+## 0.4.0 — Liquid Glass profiles and human-first social
+
+- Built with an iOS 26 SDK for native Liquid Glass tab navigation and panels, with translucent fallback for older supported iOS versions.
+- Light, Dark, OLED Black, and System appearance; black-and-white UI accent and original-color videos.
+- TikTok-style profiles with colorful banner presets, curated avatar presets, optional hosted HTTPS profile photos, pronouns, editable biography, public/private controls, follower counts and three-column video grids.
+- New accounts default to private. Teen and adult accounts may explicitly choose public, with an in-app disclosure before opening visibility.
+- Server-issued blue checkmarks rendered consistently in feed, search and profile.
+- Server-enforced owner, administrator, moderator and developer roles with audit-logged staff role and verification changes.
+- Admin/owner verification management, owner-only delegation of developer/moderator/admin roles, staff moderation counts and developer creator analytics.
+- Search and welcome redesigns plus real-content guest browsing; mock creator accounts removed.
+- No generative AI or bot account features are shipped. Rate limiting and human moderation remain necessary.
+
+**Owner provisioning:** An owner role is not issued on signup or derived solely from usernames; a verified operator must assign it to a proven account in the database. Media upload and real-device acceptance testing are still outstanding.
+
 ## 0.3.0 — Live accounts, easier signup, and account tools
 
 - Neon Managed Better Auth enabled on Kova; live Neon Function API deployed.

@@ -1,0 +1,45 @@
+name: Verify Kova 0.4 Public and Protected API
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kova-v04-api-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Verify live healthy service and permission guards
+        env:
+          KOVA_API: https://br-autumn-water-bc3ti0gm-kovaapi.compute.c-16.us-east-1.aws.neon.tech
+        run: |
+          node --input-type=module <<'JS'
+          const base = process.env.KOVA_API;
+          async function test(path, expected, method='GET', body=null) {
+            const response = await fetch(base+path,{
+              method,headers: body ? {'content-type':'application/json'} : {},
+              body:body ? JSON.stringify(body) : undefined,redirect:'manual'
+            });
+            const parsed = await response.json().catch(()=>({}));
+            console.log(method,path,response.status);
+            if (response.status !== expected) {
+              throw new Error(path+' expected '+expected+' received '+response.status+': '+(parsed.error||''));
+            }
+            return parsed.data || {};
+          }
+          const h=await test('/api/health',200);
+          if(h.service!=='kova-api'||h.version!=='0.4.0')throw Error('Stale Kova API version');
+          await test('/api/health/db',200);
+          await test('/api/auth/me',401);
+          await test('/api/staff/dashboard',401);
+          await test('/api/staff/users?q=test',401);
+          await test('/api/developer/overview',401);
+          await test('/api/staff/users/testuser/verification',401,'PATCH',{is_verified:true});
+          await test('/api/staff/users/testuser/role',401,'PATCH',{role:'owner'});
+          const lookup=await test('/api/auth/username-available?handle=xy',200);
+          if(typeof lookup.available!=='boolean')throw Error('Username lookup malformed');
+          console.log('PASS — service, database and permissioned routes');
+          JS
