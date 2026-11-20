@@ -802,7 +802,7 @@ async function staffTickets(req,id,operation='status'){
  VALUES(${me.id},'ticket_'+b.status,'support_ticket',${id})`;
  if(b.status==='resolved'||b.status==='closed'){
   await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
-  VALUES(${rows[0].author_id},${me.id},'support_status','A support ticket has been '+${b.status}+'.')`;
+  VALUES(${rows[0].author_id},${me.id},'support_status','A support ticket has been ' || ${b.status} || '.')`;
  }
  return json({id:rows[0].id,status:rows[0].status});
 }
