@@ -1,71 +1,144 @@
 import SwiftUI
-struct UserProfileView:View {
-    @EnvironmentObject private var session:SessionStore
-    let handle:String
-    @State private var result:ProfileResponse?
-    @State private var message:String?
-    @State private var isFollowing=false
-    @State private var requested=false
-    @State private var showReport=false
-    @State private var showBlockConfirmation=false
-    @State private var didBlock=false
-    var body:some View {
-        ScrollView{
+
+struct UserProfileView: View {
+    @EnvironmentObject private var session: SessionStore
+    let handle: String
+    @State private var result: ProfileResponse?
+    @State private var message: String?
+    @State private var isFollowing = false
+    @State private var requested = false
+    @State private var report = false
+    @State private var confirmBlock = false
+    @State private var didBlock = false
+    private let columns = [GridItem(.flexible(), spacing: 4),
+                           GridItem(.flexible(), spacing: 4),
+                           GridItem(.flexible(), spacing: 4)]
+
+    var body: some View {
+        ScrollView {
             if didBlock {
-                EmptyState(icon:"hand.raised",title:"Account blocked",detail:"You will not see this account or its videos.").frame(height:350)
+                EmptyState(icon: "hand.raised", title: "Account blocked",
+                           detail: "You will no longer see this account or its videos.")
+                    .frame(height: 350)
             } else if let result {
-                VStack(spacing:16){
-                    KovaAvatar(name:result.profile.displayName,size:92).padding(.top,30)
-                    Text(result.profile.displayName).font(.kovaHeadline)
-                    Text("@"+result.profile.handle).foregroundStyle(KovaTheme.muted)
-                    Text(result.profile.bio ?? "").font(.subheadline)
-                    Text("\(result.profile.followersCount ?? 0) followers · \(result.profile.followingCount ?? 0) following").foregroundStyle(KovaTheme.muted).font(.caption)
-                    GradientButton(requested ? "Requested" : (isFollowing ? "Following" : "Follow"),icon:requested ? "clock" : (isFollowing ? "checkmark" : "plus")) {
-                        if !requested {Task{await follow()}}
-                    }.padding(.horizontal,30).disabled(requested)
-                    if result.profile.isPrivate && !isFollowing {EmptyState(icon:"lock.shield",title:"Private account",detail:"Follow to request access.").frame(height:250)}
-                    else {ForEach(result.videos){video in HStack{Image(systemName:"play.rectangle.fill");Text(video.caption.isEmpty ? "Video" : video.caption).lineLimit(2)}.padding(15).frame(maxWidth:.infinity,alignment:.leading).background(KovaTheme.panel,in:RoundedRectangle(cornerRadius:14))}}
-                    if let message {Text(message).foregroundStyle(KovaTheme.muted)}
-                }.padding(20)
-            } else {LoadingPanel()}
+                VStack(spacing: 19) {
+                    KovaProfileHeader(profile: result.profile)
+                    HStack(spacing: 10) {
+                        if session.user?.handle != handle {
+                            GradientButton(requested ? "Requested" : (isFollowing ? "Following" : "Follow"),
+                                           icon: requested ? "clock" : (isFollowing ? "checkmark" : "plus")) {
+                                if !requested { Task { await follow() } }
+                            }
+                            .disabled(requested)
+                        }
+                        Button {
+                            report = true
+                        } label: {
+                            Image(systemName: "flag")
+                                .font(.system(size: 16, weight: .semibold))
+                                .frame(width: 49, height: 51)
+                                .kovaGlass(radius: 15)
+                        }
+                        .foregroundStyle(KovaTheme.foreground)
+                        .accessibilityLabel("Report user")
+                    }
+                    .padding(.horizontal, 20)
+                    if result.profile.isPrivate && !isFollowing && session.user?.id != result.profile.id {
+                        EmptyState(icon: "lock.shield", title: "This account is private",
+                                   detail: "Follow requests need approval before you can see private posts.")
+                            .frame(height: 190)
+                    } else {
+                        HStack {
+                            Image(systemName: "square.grid.3x3.fill")
+                            Text("VIDEOS").font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .tracking(1.4)
+                            Spacer()
+                            Text("\(result.videos.count)")
+                                .font(.caption).foregroundStyle(KovaTheme.muted)
+                        }
+                        .padding(.horizontal, 21)
+                        if result.videos.isEmpty {
+                            EmptyState(icon: "play.square", title: "No videos yet",
+                                       detail: "Approved posts from this creator will appear here.")
+                                .frame(height: 180)
+                        } else {
+                            LazyVGrid(columns: columns, spacing: 4) {
+                                ForEach(Array(result.videos.enumerated()), id: \.element.id) { index, video in
+                                    KovaProfileVideoTile(caption: video.caption,
+                                                         thumbnail: video.thumbnailUrl, index: index)
+                                }
+                            }
+                            .padding(.horizontal, 5)
+                        }
+                    }
+                    if let message {
+                        Text(message).font(.footnote).foregroundStyle(KovaTheme.muted)
+                    }
+                }
+                .padding(.bottom, 25)
+            } else if let message {
+                EmptyState(icon: "person.crop.circle.badge.questionmark", title: "Couldn't open profile",
+                           detail: message).frame(height: 280)
+            } else {
+                LoadingPanel()
+            }
         }
         .background(KovaTheme.background)
-        .navigationTitle("Profile")
-        .task{await load()}
+        .navigationTitle("@" + handle)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
         .toolbar {
-            ToolbarItem(placement:.topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 if session.user != nil && session.user?.handle != handle {
                     Menu {
-                        Button("Report profile",systemImage:"flag"){showReport=true}
-                        Button("Block account",systemImage:"hand.raised",role:.destructive){showBlockConfirmation=true}
-                    } label: {Image(systemName:"ellipsis").foregroundStyle(.white)}
+                        Button("Report account", systemImage: "flag") { report = true }
+                        Button("Block account", systemImage: "hand.raised", role: .destructive) {
+                            confirmBlock = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis").foregroundStyle(KovaTheme.foreground)
+                    }
                 }
             }
         }
-        .sheet(isPresented:$showReport) {
-            if let id=result?.profile.id {ReportSheet(targetType:"user",targetID:id)}
+        .sheet(isPresented: $report) {
+            if let id = result?.profile.id { ReportSheet(targetType: "user", targetID: id) }
         }
-        .confirmationDialog("Block this account?",isPresented:$showBlockConfirmation) {
-            Button("Block account",role:.destructive){Task{await block()}}
-        } message:{Text("You won't see this person's videos or messages.")}
-
+        .confirmationDialog("Block this account?", isPresented: $confirmBlock) {
+            Button("Block account", role: .destructive) { Task { await block() } }
+        } message: { Text("Their posts and profile will no longer appear for you.") }
     }
-    private func load() async {do{result=try await session.api.request("/api/users/\(handle)");isFollowing=result?.profile.isFollowing ?? false}catch{message=error.localizedDescription}}
+
+    private func load() async {
+        do {
+            result = try await session.api.request("/api/users/\(handle)")
+            isFollowing = result?.profile.isFollowing ?? false
+        } catch { message = error.localizedDescription }
+    }
     private func follow() async {
-        guard session.user != nil else{message="Sign in first.";return}
-        do{let r:FollowResult=try await session.api.request("/api/users/\(handle)/follow",method:isFollowing ? "DELETE":"POST");isFollowing=r.status=="accepted";if r.status=="pending"{requested=true;message="Follow request sent."};if !isFollowing && r.status==nil {message="Unfollowed."}}
-        catch{message=error.localizedDescription}
+        guard session.user != nil else { message = "Sign in to follow people."; return }
+        do {
+            let response: FollowResult = try await session.api.request(
+                "/api/users/\(handle)/follow", method: isFollowing ? "DELETE" : "POST")
+            isFollowing = response.status == "accepted"
+            if response.status == "pending" {
+                requested = true
+                message = "Follow request sent."
+            } else if response.status == nil {
+                message = "Unfollowed."
+            }
+        } catch { message = error.localizedDescription }
     }
     private func block() async {
-        guard session.user != nil else {return}
+        guard session.user != nil else { return }
         do {
-            let payload=try session.api.encode(BlockProfilePayload(handle:handle))
-            let _:BlockProfileResponse=try await session.api.request("/api/users/me/block",method:"POST",json:payload)
-            didBlock=true
-            message="Account blocked."
-        } catch {message=error.localizedDescription}
+            let body = try session.api.encode(BlockProfilePayload(handle: handle))
+            let _: BlockProfileResponse = try await session.api.request("/api/users/me/block", method: "POST", json: body)
+            didBlock = true
+        } catch { message = error.localizedDescription }
     }
 }
-private struct BlockProfilePayload:Encodable{let handle:String}
-private struct BlockProfileResponse:Decodable{let blocked:Bool}
-private struct FollowResult:Decodable{let status:String?;let following:Bool?}
+private struct FollowResult: Decodable { let status: String?; let following: Bool? }
+private struct BlockProfilePayload: Encodable { let handle: String }
+private struct BlockProfileResponse: Decodable { let blocked: Bool }

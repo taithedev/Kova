@@ -5,112 +5,114 @@ struct MyProfileView: View {
     @State private var ownVideos: [OwnVideo] = []
     @State private var errorMessage: String?
     @State private var deletingID: String?
+    private let columns = [GridItem(.flexible(), spacing: 4),
+                           GridItem(.flexible(), spacing: 4),
+                           GridItem(.flexible(), spacing: 4)]
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 if let user = session.user {
-                    VStack(spacing: 16) {
-                        KovaAvatar(name: user.displayName, size: 95).padding(.top, 23)
-                        Text(user.displayName).font(.kovaHeadline)
-                        Text("@" + user.handle).foregroundStyle(KovaTheme.muted)
-                        HStack(spacing: 32) {
-                            stat("Followers", value: user.followersCount ?? 0)
-                            stat("Following", value: user.followingCount ?? 0)
+                    VStack(spacing: 19) {
+                        KovaProfileHeader(profile: user, ownProfile: true)
+                        HStack(spacing: 10) {
+                            NavigationLink { EditProfileView() } label: {
+                                Label("Edit profile", systemImage: "pencil")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 42)
+                                    .kovaGlass(radius: 13)
+                            }
+                            NavigationLink { AccountCenterView() } label: {
+                                Label("Account", systemImage: "person.text.rectangle")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 42)
+                                    .kovaGlass(radius: 13)
+                            }
                         }
+                        .foregroundStyle(KovaTheme.foreground)
+                        .padding(.horizontal, 20)
+                        HStack(spacing: 9) {
+                            Image(systemName: "play.rectangle.on.rectangle")
+                            Text("VIDEOS").font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .tracking(1.6)
+                            Spacer()
+                            Text("\(ownVideos.count)").font(.caption).foregroundStyle(KovaTheme.muted)
+                        }
+                        .padding(.horizontal, 21)
                         .padding(.top, 7)
-                        HStack(spacing: 12) {
-                            NavigationLink("Edit profile") { EditProfileView() }
-                            NavigationLink("Settings") { SettingsView() }
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.white)
-                        NavigationLink { AccountCenterView() } label: {
-                            Label("Account center", systemImage: "lock.shield")
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.top, 3)
-                        Text(user.bio?.isEmpty == false ? (user.bio ?? "") : "Make this space yours.")
-                            .font(.footnote)
-                            .foregroundStyle(KovaTheme.muted)
-                        Divider().overlay(KovaTheme.border)
-                        SectionHeading(title: "My videos", subtitle: "Uploads are reviewed before becoming public")
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         if ownVideos.isEmpty {
-                            EmptyState(icon: "film.stack", title: "Nothing posted yet", detail: "Create your first Kova video.")
-                                .frame(height: 250)
+                            EmptyState(icon: "video", title: "No videos yet",
+                                       detail: "Your uploads will appear here, including videos awaiting review.")
+                                .frame(height: 210)
                         } else {
-                            ForEach(ownVideos) { video in
-                                HStack(spacing: 12) {
-                                    Image(systemName: "film").font(.system(size: 22))
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(video.caption.isEmpty ? "Untitled video" : video.caption)
-                                            .lineLimit(2).font(.system(size: 14, weight: .semibold))
-                                        Text(video.status.capitalized + " · " + video.visibility.capitalized)
-                                            .font(.caption2).foregroundStyle(KovaTheme.muted)
-                                    }
-                                    Spacer()
+                            LazyVGrid(columns: columns, spacing: 4) {
+                                ForEach(Array(ownVideos.enumerated()), id: \.element.id) { index, video in
                                     Menu {
+                                        Text(video.status == "pending" ? "Awaiting review" : video.status.capitalized)
                                         Button("Delete video", systemImage: "trash", role: .destructive) {
                                             deletingID = video.id
                                         }
                                     } label: {
-                                        Image(systemName: "ellipsis")
-                                            .font(.system(size: 18, weight: .bold))
-                                            .foregroundStyle(.white)
+                                        KovaProfileVideoTile(caption: video.caption, index: index, status: video.status)
                                     }
                                 }
-                                .padding(15)
-                                .background(KovaTheme.panel, in: RoundedRectangle(cornerRadius: 14))
                             }
+                            .padding(.horizontal, 5)
                         }
                         if let errorMessage {
-                            Text(errorMessage).font(.footnote).foregroundStyle(KovaTheme.muted)
+                            Text(errorMessage)
+                                .font(.footnote).foregroundStyle(KovaTheme.muted)
+                                .padding(.horizontal, 20)
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.bottom, 30)
                 } else {
                     EmptyState(icon: "person.crop.circle", title: "Your space awaits",
-                               detail: "Sign in to create and save videos.")
+                               detail: "Sign in to customize your profile, follow people and create videos.")
                     GradientButton("Leave preview") { session.exitPreview() }
                         .padding(.horizontal, 25)
                 }
             }
             .background(KovaTheme.background)
             .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink { SettingsView() } label: {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(KovaTheme.foreground)
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
             .task { await load() }
             .refreshable { await load() }
             .confirmationDialog("Delete this video?", isPresented: Binding(
-                get: { deletingID != nil },
-                set: { if !$0 { deletingID = nil } }
+                get: { deletingID != nil }, set: { if !$0 { deletingID = nil } }
             )) {
                 Button("Delete video", role: .destructive) {
                     if let id = deletingID { Task { await removeVideo(id) } }
                 }
-            } message: {
-                Text("This removes the video from your profile and Kova's feed.")
-            }
+            } message: { Text("You cannot undo this action.") }
         }
     }
-    private func stat(_ title: String, value: Int) -> some View {
-        VStack(spacing: 5) {
-            Text(value.formatted()).font(.title3).bold()
-            Text(title).font(.caption).foregroundStyle(KovaTheme.muted)
-        }
-    }
+
     private func load() async {
         guard session.user != nil else { return }
         do {
-            let response: OwnVideoPage = try await session.api.request("/api/videos/mine")
-            ownVideos = response.items
+            let page: OwnVideoPage = try await session.api.request("/api/videos/mine")
+            ownVideos = page.items
         } catch { errorMessage = error.localizedDescription }
     }
+
     private func removeVideo(_ id: String) async {
         defer { deletingID = nil }
         do {
             let _: DeletedKovaVideo = try await session.api.request("/api/videos/\(id)", method: "DELETE")
             ownVideos.removeAll { $0.id == id }
-            errorMessage = "Video deleted."
         } catch { errorMessage = error.localizedDescription }
     }
 }
