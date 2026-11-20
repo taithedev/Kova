@@ -73,6 +73,11 @@ struct OwnerConsoleView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(15).kovaGlass(radius: 16)
                     }
+                    NavigationLink { KovaAccountSafetyView() } label: {
+                        Label("Age and messaging restrictions", systemImage: "lock.shield")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(15).kovaGlass(radius: 16)
+                    }
                     NavigationLink { StaffSupportView() } label: {
                         Label("Resolve support tickets", systemImage: "bubble.left.and.bubble.right")
                             .frame(maxWidth: .infinity, alignment: .leading)

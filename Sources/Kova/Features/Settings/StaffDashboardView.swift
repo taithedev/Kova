@@ -68,6 +68,9 @@ struct StaffDashboardView: View {
                     Text("Loading staff statistics…")
                         .foregroundStyle(KovaTheme.muted)
                 }
+                NavigationLink { KovaAccountSafetyView() } label: {
+                    Label("Age and messaging restrictions", systemImage: "lock.shield")
+                }
                 NavigationLink { ModerationView() } label: {
                     Label("Moderate published videos and reports", systemImage: "checkmark.shield")
                 }

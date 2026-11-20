@@ -79,6 +79,9 @@ struct SettingsView: View {
                         NavigationLink { ModerationView() } label: {
                             Label("Live video moderation", systemImage: "checkmark.shield")
                         }
+                        NavigationLink { KovaAccountSafetyView() } label: {
+                            Label("Account age & messaging restrictions", systemImage: "lock.shield")
+                        }
                         NavigationLink { StaffSupportView() } label: {
                             Label("Support ticket queue", systemImage: "bubble.left.and.bubble.right")
                         }
@@ -118,7 +121,11 @@ struct SettingsView: View {
                 Toggle("Start videos muted", isOn: $muteVideos).tint(KovaTheme.foreground)
             }
             Section("SAFETY") {
-                LabeledContent("Direct messages", value: "Disabled")
+                NavigationLink { KovaMessagesSettingsView() } label: {
+                    Label("Private messaging preferences", systemImage: "bubble.left.and.bubble.right")
+                }
+                LabeledContent("Direct messages", value: session.user?.ageRestricted == true ? "Restricted by staff" :
+                    (session.user?.allowMessages == true ? "Mutual follows only" : "Off"))
                 LabeledContent("Account", value: session.user?.isPrivate == true ? "Private" : "Public")
                 Text("New accounts start private. Public videos go live immediately when your account is public. Report unsafe content.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)

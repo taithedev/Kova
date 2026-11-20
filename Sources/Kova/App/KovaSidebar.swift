@@ -7,7 +7,7 @@ import SwiftUI
 enum KovaDrawerRoute: String, Identifiable {
     case settings, account, editProfile, bookmarks, followRequests, notifications
     case support, contacts, studio, staff, verify, moderation, profileMedia
-    case supportQueue, owner
+    case supportQueue, accountSafety, messages, owner
     var id: String { rawValue }
 }
 
@@ -69,6 +69,7 @@ struct KovaSidebar: View {
                         page("Saved videos", "bookmark", .bookmarks)
                         page("Following requests", "person.2", .followRequests)
                         page("Notifications", "bell", .notifications)
+                        page("Private messages", "bubble.left.and.bubble.right", .messages)
                         page("Account center", "person.text.rectangle", .account)
                         page("Settings & appearance", "gearshape", .settings)
                     }
@@ -80,6 +81,7 @@ struct KovaSidebar: View {
                         drawerSection("STAFF TOOLS") {
                             page("Moderation", "shield.lefthalf.filled", .moderation)
                             page("Media takedowns", "photo.on.rectangle", .profileMedia)
+                            page("Account safety", "lock.shield", .accountSafety)
                             page("Support queue", "bubble.left.and.bubble.right", .supportQueue)
                             page("Staff dashboard", "person.3", .staff)
                             if verifies {
@@ -166,6 +168,8 @@ struct KovaSidebarDestination: View {
                 case .moderation: ModerationView()
                 case .profileMedia: StaffMediaReviewView()
                 case .supportQueue: StaffSupportView()
+                case .accountSafety: KovaAccountSafetyView()
+                case .messages: KovaMessagesView()
                 case .owner: OwnerConsoleView()
                 }
             }
