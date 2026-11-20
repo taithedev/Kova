@@ -63,6 +63,11 @@ struct OwnerConsoleView: View {
                         metric("Real follows", overview.realFollowRelationships, "person.badge.plus")
                     }
                     SectionHeading(title: "Management")
+                    NavigationLink { KovaVerificationCenterView() } label: {
+                        Label("Verify creators and manage blue checks", systemImage: "checkmark.seal.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(15).kovaGlass(radius: 16)
+                    }
                     NavigationLink { StaffDashboardView() } label: {
                         Label("Manage team roles and verification", systemImage: "checkmark.shield")
                             .frame(maxWidth: .infinity, alignment: .leading)

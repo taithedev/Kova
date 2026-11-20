@@ -82,6 +82,11 @@ struct SettingsView: View {
                         NavigationLink { StaffMediaReviewView() } label: {
                             Label("Profile media takedowns", systemImage: "photo.badge.checkmark")
                         }
+                        if role == "owner" || role == "admin" {
+                            NavigationLink { KovaVerificationCenterView() } label: {
+                                Label("Verify users", systemImage: "checkmark.seal.fill")
+                            }
+                        }
                         NavigationLink { StaffDashboardView() } label: {
                             Label("Staff dashboard", systemImage: "shield.lefthalf.filled")
                         }
