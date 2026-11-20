@@ -3,6 +3,7 @@ import SwiftUI
 private struct StaffOverview: Decodable {
     let openReports: Int
     let pendingVideos: Int
+    let liveVideos: Int
     let accounts: Int
     let verifiedAccounts: Int
     let role: String
@@ -59,7 +60,7 @@ struct StaffDashboardView: View {
             }
             Section("OVERVIEW") {
                 if let overview {
-                    metric("Pending videos", overview.pendingVideos, icon: "play.rectangle.on.rectangle")
+                    metric("Published videos", overview.liveVideos, icon: "play.rectangle.on.rectangle")
                     metric("Open reports", overview.openReports, icon: "flag")
                     metric("Accounts", overview.accounts, icon: "person.2")
                     metric("Verified accounts", overview.verifiedAccounts, icon: "checkmark.seal")
@@ -68,7 +69,7 @@ struct StaffDashboardView: View {
                         .foregroundStyle(KovaTheme.muted)
                 }
                 NavigationLink { ModerationView() } label: {
-                    Label("Review videos and reports", systemImage: "checkmark.shield")
+                    Label("Moderate published videos and reports", systemImage: "checkmark.shield")
                 }
             }
             if canVerify {

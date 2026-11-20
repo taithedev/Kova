@@ -33,7 +33,7 @@ struct EditProfileView: View {
                                size: 67, url: avatarURL.isEmpty ? "kova-avatar:" + avatarPreset : avatarURL)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(displayName.isEmpty ? "Your profile" : displayName).font(.headline)
-                        Text("Choose an avatar and a banner.")
+                        Text("Make your profile your own.")
                             .font(.footnote).foregroundStyle(KovaTheme.muted)
                     }
                 }
@@ -129,7 +129,7 @@ struct EditProfileView: View {
                      "Animated GIF banners unlock above 500 real, accepted followers.")
                     .font(.footnote)
                     .foregroundStyle(KovaTheme.muted)
-                Text("Uploaded photos and GIFs appear on your profile after staff review.")
+                Text("Profile photos and GIF banners go live immediately. Staff can remove content that violates community rules.")
                     .font(.footnote)
                     .foregroundStyle(KovaTheme.muted)
                 if uploadingMedia {
@@ -149,7 +149,7 @@ struct EditProfileView: View {
                     .onChange(of: isPrivate) { old, new in
                         if old && !new { showPublicWarning = true }
                     }
-                Text("Every new Kova account starts private. You can change it here. A public profile can be seen by anyone; videos still need approval before appearing in feeds.")
+                Text("New accounts start private. With a public account, your public videos can appear immediately. Be careful with personal information.")
                     .font(.footnote)
                     .foregroundStyle(KovaTheme.muted)
             }
@@ -247,6 +247,13 @@ struct EditProfileView: View {
             let result = try await ProfileMediaService.upload(data, kind: kind, mime: mime, api: session.api)
             message = result.message
             await loadMedia()
+            if let fresh: KovaUser = try? await session.api.request("/api/auth/me") {
+                session.updateUser(fresh)
+                if kind == "avatar" {
+                    avatarURL = fresh.avatarUrl ?? ""
+                    avatarChanged = false
+                }
+            }
         } catch { message = error.localizedDescription }
     }
 

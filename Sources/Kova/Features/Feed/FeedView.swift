@@ -13,7 +13,7 @@ struct FeedView:View {
                 KovaTheme.background.ignoresSafeArea()
                 if model.videos.isEmpty && model.isLoading {LoadingPanel(label:"Opening Kova")} else if model.videos.isEmpty {
                     VStack(spacing:16) {
-                        EmptyState(icon:"play.square.stack",title:"No published videos yet",detail:"New approved videos from real creators will appear here.")
+                        EmptyState(icon:"play.square.stack",title:"No published videos yet",detail:"Published videos from real creators will appear here.")
                         Button("Refresh feed") {
                             Task { await model.load(api:session.api,preview:session.isPreviewing) }
                         }.font(.system(size:14,weight:.semibold)).foregroundStyle(KovaTheme.accent)

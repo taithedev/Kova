@@ -74,13 +74,13 @@ struct SettingsView: View {
                 if session.hasVerifiedSession, let role = session.user?.role {
                     if ["owner", "admin", "moderator"].contains(role) {
                         NavigationLink { ModerationView() } label: {
-                            Label("Moderation queue", systemImage: "checkmark.shield")
+                            Label("Live video moderation", systemImage: "checkmark.shield")
                         }
                         NavigationLink { StaffSupportView() } label: {
                             Label("Support ticket queue", systemImage: "bubble.left.and.bubble.right")
                         }
                         NavigationLink { StaffMediaReviewView() } label: {
-                            Label("Review profile photos", systemImage: "photo.badge.checkmark")
+                            Label("Profile media takedowns", systemImage: "photo.badge.checkmark")
                         }
                         NavigationLink { StaffDashboardView() } label: {
                             Label("Staff dashboard", systemImage: "shield.lefthalf.filled")
@@ -112,11 +112,11 @@ struct SettingsView: View {
             Section("SAFETY") {
                 LabeledContent("Direct messages", value: "Disabled")
                 LabeledContent("Account", value: session.user?.isPrivate == true ? "Private" : "Public")
-                Text("New accounts start private. Changing privacy is your choice; public profiles can be viewed by anyone.")
+                Text("New accounts start private. Public videos go live immediately when your account is public. Report unsafe content.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }
             Section("ABOUT") {
-                LabeledContent("Version", value: "0.6.0")
+                LabeledContent("Version", value: "0.7.0")
                 Text("Kova is made for people. No automated follows, bots, or generated-content feeds.")
                     .font(.footnote).foregroundStyle(KovaTheme.muted)
             }

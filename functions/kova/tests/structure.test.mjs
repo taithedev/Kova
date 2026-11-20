@@ -2,20 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const content=readFileSync(new URL('../index.ts',import.meta.url),'utf8');
-test('Kova backend provides registration, login, sessions and account checks',()=>{
+test('Kova backend has auth and account checks',()=>{
  for(const path of ['/api/auth/register','/api/auth/login','/api/auth/me','/api/auth/logout','/api/auth/username-available','/api/auth/sessions'])
  assert.ok(content.includes(path),path);
 });
-test('minimum age 13 and pending moderation enforced',()=>{
+test('age 13 minimum, instant publishing and staff takedowns',()=>{
  assert.ok(content.includes('if(age<13)'));
- assert.ok(content.includes("status='pending'"));
+ assert.match(content,/VALUES\(\$\{me.id\},\$\{key\},'private',.*'approved'/);
+ assert.match(content,/UPDATE videos SET status=\$\{status\},moderated_at=now\(\)/);
 });
-test('Better Auth used for password verification, not local hash',()=>{
+test('Better Auth used for password verification',()=>{
  assert.ok(content.includes("sign-up/email"));
  assert.ok(content.includes("sign-in/email"));
  assert.ok(!content.includes("scrypt"));
 });
-test('private videos cannot enter feed without approval',()=>{
+test('private videos are not shown in public feeds',()=>{
  assert.ok(content.includes("v.status='approved'"));
  assert.ok(content.includes("p.is_private=false"));
 });

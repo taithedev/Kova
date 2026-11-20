@@ -24,15 +24,15 @@ struct UploadView:View {
                         }
                     }
                     HStack(spacing:12) {
-                        PhotosPicker(selection:$selected,matching:.videos){Label("Choose video",systemImage:"photo.on.rectangle.angled").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent).tint(KovaTheme.panel)
-                        Button{showCamera=true}label:{Label("Record",systemImage:"camera.fill").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent).tint(KovaTheme.panel)
+                        PhotosPicker(selection:$selected,matching:.videos){Label("Choose video",systemImage:"photo.on.rectangle.angled").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent).tint(KovaTheme.accent)
+                        Button{showCamera=true}label:{Label("Record",systemImage:"camera.fill").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent).tint(KovaTheme.accent)
                     }
                     VStack(alignment:.leading,spacing:9){Text("Caption").font(.headline);TextField("Tell your story...",text:$caption,axis:.vertical).lineLimit(3...6).padding(16).background(KovaTheme.panel,in:RoundedRectangle(cornerRadius:17))}
                     VStack(alignment:.leading,spacing:9){Text("Who can see this?").font(.headline);Picker("Visibility",selection:$visibility){Text("Everyone").tag("public");Text("Followers").tag("followers");Text("Only me").tag("private")}.pickerStyle(.segmented)}
-                    GlassPanel {HStack(alignment:.top){Image(systemName:"checkmark.shield.fill").foregroundStyle(KovaTheme.aqua);Text("Uploads are reviewed before they appear in the public feed. Keep your videos age-appropriate and respect people's privacy.").font(.footnote).foregroundStyle(KovaTheme.muted)}}
-                    GradientButton(uploading ? "Uploading..." : "Post video",icon:"arrow.up.circle.fill") {Task{await publish()}}
+                    GlassPanel {HStack(alignment:.top){Image(systemName:"checkmark.shield.fill").foregroundStyle(KovaTheme.aqua);Text("Videos publish as soon as uploading finishes. Follow community rules, respect privacy, and report unsafe posts. Staff can remove violations.").font(.footnote).foregroundStyle(KovaTheme.muted)}}
+                    GradientButton(uploading ? "Publishing..." : "Publish video now",icon:"arrow.up.circle.fill") {Task{await publish()}}
                         .disabled(uploading || videoURL == nil || session.user == nil || !AppConfig.isConfigured)
-                    if uploading {ProgressView().frame(maxWidth:.infinity)}
+                    if uploading {ProgressView("Uploading and publishing…").tint(KovaTheme.accent).frame(maxWidth:.infinity)}
                     if session.user==nil {Text("Sign in to upload.").font(.footnote).foregroundStyle(KovaTheme.muted)}
                     if let message {Text(message).font(.footnote).foregroundStyle(KovaTheme.lavender)}
                 }.padding(18)

@@ -5,8 +5,10 @@ private struct OwnerOverview: Decodable {
     let newAccountsWeek: Int
     let approvedVideos: Int
     let pendingVideos: Int
+    let removedVideos: Int
     let openSupport: Int
     let pendingMedia: Int
+    let liveProfileMedia: Int
     let openReports: Int
     let realFollowRelationships: Int
     let events: [OwnerAuditEvent]
@@ -54,9 +56,9 @@ struct OwnerConsoleView: View {
                         metric("Accounts", overview.accounts, "person.2")
                         metric("New this week", overview.newAccountsWeek, "calendar")
                         metric("Published videos", overview.approvedVideos, "play.rectangle")
-                        metric("Awaiting review", overview.pendingVideos, "clock")
+                        metric("Removed videos", overview.removedVideos, "hand.raised")
                         metric("Support requests", overview.openSupport, "lifepreserver")
-                        metric("Media for review", overview.pendingMedia, "photo")
+                        metric("Live profile media", overview.liveProfileMedia, "photo")
                         metric("Open reports", overview.openReports, "flag")
                         metric("Real follows", overview.realFollowRelationships, "person.badge.plus")
                     }
@@ -71,8 +73,13 @@ struct OwnerConsoleView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(15).kovaGlass(radius: 16)
                     }
+                    NavigationLink { ModerationView() } label: {
+                        Label("Moderate published videos and reports", systemImage: "play.rectangle.on.rectangle")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(15).kovaGlass(radius: 16)
+                    }
                     NavigationLink { StaffMediaReviewView() } label: {
-                        Label("Review profile images and GIFs", systemImage: "photo")
+                        Label("Manage live profile images and GIFs", systemImage: "photo")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(15).kovaGlass(radius: 16)
                     }
