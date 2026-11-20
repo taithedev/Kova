@@ -250,10 +250,16 @@ async function userMe(req){
   }
  }
  const result=await db()`UPDATE profiles SET display_name=${name},bio=${bio},is_private=${b.is_private},
- avatar_url=${avatar},banner_style=${banner},pronouns=${pronouns},updated_at=now()
+ avatar_url=${avatar},avatar_key=CASE WHEN ${b.avatar_url!==undefined} THEN NULL ELSE avatar_key END,
+ banner_key=CASE WHEN ${b.reset_banner===true} THEN NULL ELSE banner_key END,
+ banner_animated=CASE WHEN ${b.reset_banner===true} THEN false ELSE banner_animated END,
+ banner_style=${banner},pronouns=${pronouns},updated_at=now()
  WHERE id=${me.id}
  RETURNING id,handle,display_name,bio,avatar_url,is_verified,age_band,role,is_private,allow_messages,banner_style,pronouns`;
- return json(await mediaProfile({...result[0],role:me.role,avatar_key:me.avatar_key,banner_key:me.banner_key,banner_animated:me.banner_animated}));
+ return json(await mediaProfile({...result[0],role:me.role,
+ avatar_key:b.avatar_url!==undefined ? null : me.avatar_key,
+ banner_key:b.reset_banner===true ? null : me.banner_key,
+ banner_animated:b.reset_banner===true ? false : me.banner_animated}));
 }
 async function profile(req,handle){
  const who=await viewer(req,false);
@@ -740,6 +746,27 @@ async function staffTickets(req,id){
  return json(rows[0]);
 }
 
+async function ownerOverview(req){
+ const me=await viewer(req);
+ if(me.role!=='owner')throw new AppError(403,'Owner access required');
+ const totals=await db()`SELECT
+ (SELECT count(*)::int FROM profiles WHERE disabled_at IS NULL) AS accounts,
+ (SELECT count(*)::int FROM profiles WHERE created_at>=now()-interval '7 days') AS new_accounts_week,
+ (SELECT count(*)::int FROM videos WHERE status='approved') AS approved_videos,
+ (SELECT count(*)::int FROM videos WHERE status='pending') AS pending_videos,
+ (SELECT count(*)::int FROM support_tickets WHERE status IN ('open','in_progress')) AS open_support,
+ (SELECT count(*)::int FROM profile_media WHERE status='pending') AS pending_media,
+ (SELECT count(*)::int FROM reports WHERE status='open') AS open_reports,
+ (SELECT count(*)::int FROM follows WHERE status='accepted') AS real_follow_relationships`;
+ const events=await db()`SELECT e.id,e.action,e.subject_type,e.created_at,p.handle AS actor
+ FROM staff_action_events e JOIN profiles p ON p.id=e.actor_id
+ ORDER BY e.created_at DESC LIMIT 25`;
+ const privilegeEvents=await db()`SELECT a.id,a.action,a.old_value,a.new_value,a.created_at,p.handle AS actor
+ FROM profile_staff_audit a JOIN profiles p ON p.id=a.actor_id
+ ORDER BY a.created_at DESC LIMIT 25`;
+ return json({...totals[0],events,privilege_events:privilegeEvents});
+}
+
 async function handle(req){
  const url=new URL(req.url);
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
@@ -771,6 +798,7 @@ async function handle(req){
  if(method==='GET'&&pathname==='/api/staff/tickets')return staffTickets(req);
  const staffTicket=pathname.match(/^\/api\/staff\/tickets\/([0-9a-f-]{36})$/);
  if(method==='PATCH'&&staffTicket)return staffTickets(req,staffTicket[1]);
+ if(method==='GET'&&pathname==='/api/owner/overview')return ownerOverview(req);
  if(method==='GET'&&pathname==='/api/staff/dashboard')return staffDashboard(req);
  if(method==='GET'&&pathname==='/api/staff/users')return staffUsers(req);
  if(method==='GET'&&pathname==='/api/developer/overview')return developerOverview(req);
