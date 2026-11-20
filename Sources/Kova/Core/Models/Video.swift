@@ -16,12 +16,14 @@ struct KovaVideo: Codable, Identifiable, Hashable {
     var commentsCount: Int
     var liked: Bool
     var bookmarked: Bool
+    var repostsCount: Int
+    var reposted: Bool
     var isDemo: Bool = false
     enum CodingKeys: String, CodingKey {
         case id, caption, videoUrl, thumbnailUrl, createdAt, durationSeconds, musicTitle, authorId,
-             handle, displayName, avatarUrl, isVerified, likesCount, commentsCount, liked, bookmarked
+             handle, displayName, avatarUrl, isVerified, likesCount, commentsCount, liked, bookmarked, repostsCount, reposted
     }
-    static func == (lhs:KovaVideo,rhs:KovaVideo)->Bool {lhs.id==rhs.id && lhs.liked==rhs.liked && lhs.bookmarked==rhs.bookmarked}
+    static func == (lhs:KovaVideo,rhs:KovaVideo)->Bool {lhs.id==rhs.id && lhs.liked==rhs.liked && lhs.bookmarked==rhs.bookmarked && lhs.reposted==rhs.reposted}
     func hash(into hasher:inout Hasher){hasher.combine(id)}
 }
 struct VideoPage: Decodable { let items: [KovaVideo]; let nextCursor: String? }

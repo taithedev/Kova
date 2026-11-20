@@ -9,6 +9,8 @@ struct VideoCard: View {
     let comment: () -> Void
     let report: () -> Void
     let follow: () -> Void
+    let repost: () -> Void
+    let notInterested: () -> Void
     @State private var paused = false
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -46,7 +48,8 @@ struct VideoCard: View {
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                VideoActions(video: video, like: like, bookmark: bookmark, comment: comment, report: report, follow: follow)
+                VideoActions(video: video, like: like, bookmark: bookmark, comment: comment, report: report, follow: follow,
+                             repost: repost, notInterested: notInterested)
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 20)

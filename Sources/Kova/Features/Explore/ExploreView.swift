@@ -117,7 +117,7 @@ struct ExploreView: View {
                             }
                         }
                         if !result.videos.isEmpty {
-                            SectionHeading(title: "Videos", subtitle: "Approved public posts")
+                            SectionHeading(title: "Videos", subtitle: "Public creator posts")
                             ForEach(result.videos) { video in
                                 HStack(spacing: 13) {
                                     Image(systemName: "play.fill")

@@ -30,6 +30,24 @@ import Foundation
             videos[index].likesCount += liked ? -1 : 1
         }catch{errorMessage=error.localizedDescription}
     }
+    func repost(_ id: String, api: APIClient) async {
+        guard let index = videos.firstIndex(where: { $0.id == id }) else { return }
+        let alreadyReposted = videos[index].reposted
+        do {
+            let result: RepostResult = try await api.request(
+                "/api/videos/\(id)/repost", method: alreadyReposted ? "DELETE" : "POST")
+            guard let updated = videos.firstIndex(where: { $0.id == id }) else { return }
+            videos[updated].reposted = result.reposted
+            videos[updated].repostsCount = result.repostsCount
+        } catch { errorMessage = error.localizedDescription }
+    }
+    func notInterested(_ id: String, api: APIClient) async {
+        do {
+            let _: VideoPreferenceResult = try await api.request(
+                "/api/videos/\(id)/not-interested", method: "POST")
+            videos.removeAll { $0.id == id }
+        } catch { errorMessage = error.localizedDescription }
+    }
     func bookmark(_ id:String,api:APIClient) async {
         guard let index=videos.firstIndex(where:{$0.id==id}) else{return}
         let saved=videos[index].bookmarked
@@ -41,3 +59,6 @@ import Foundation
 }
 struct LikeResult:Decodable{let liked:Bool}
 struct BookmarkResult:Decodable{let bookmarked:Bool}
+
+struct RepostResult: Decodable { let reposted: Bool; let repostsCount: Int }
+struct VideoPreferenceResult: Decodable { let hidden: Bool }

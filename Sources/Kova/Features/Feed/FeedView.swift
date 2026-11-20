@@ -27,6 +27,8 @@ struct FeedView:View {
                                     bookmark:{interact{await model.bookmark(video.id,api:session.api)}},
                                     comment:{if !session.isPreviewing {commentsVideo=video} else {needsSignIn=true}},
                                     report:{if !session.isPreviewing {reportVideo=video}},
+                                    repost:{interact{await model.repost(video.id,api:session.api)}},
+                                    notInterested:{interact{await model.notInterested(video.id,api:session.api)}},
                                     follow:{interact{
                                         do {
                                             let response:FollowStatus=try await session.api.request("/api/users/\(video.handle)/follow",method:"POST")
@@ -47,7 +49,8 @@ struct FeedView:View {
                     .scrollTargetBehavior(.paging)
                     .scrollBounceBehavior(.basedOnSize)
                     .scrollPosition(id:$activeID)
-                    .sensoryFeedback(.selection, trigger:activeID)
+.sensoryFeedback(.selection, trigger:activeID)
+                    .animation(.easeInOut(duration: 0.18), value: model.videos.count)
                     .refreshable {
                         activeID=nil
                         await model.load(api:session.api,preview:session.isPreviewing)

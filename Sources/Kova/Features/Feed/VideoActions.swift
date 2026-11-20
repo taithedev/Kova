@@ -6,6 +6,8 @@ struct VideoActions: View {
     let comment: () -> Void
     let report: () -> Void
     let follow: () -> Void
+    let repost: () -> Void
+    let notInterested: () -> Void
     private var shareURL: URL {
         URL(string: "/watch/\(video.id)", relativeTo: AppConfig.apiBaseURL)!.absoluteURL
     }
@@ -23,16 +25,31 @@ struct VideoActions: View {
             actionButton(video.liked ? "heart.fill" : "heart", count: video.likesCount, action: like)
             actionButton("bubble.right", count: video.commentsCount, action: comment)
             actionButton(video.bookmarked ? "bookmark.fill" : "bookmark", count: nil, action: bookmark)
+            Button(action: repost) {
+                VStack(spacing: 5) {
+                    Image(systemName: video.reposted ? "arrow.2.squarepath" : "arrow.2.squarepath")
+                        .font(.system(size: 27))
+                        .foregroundStyle(video.reposted ? KovaTheme.accent : .white)
+                    Text(video.repostsCount.formatted(.number.notation(.compactName)))
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .accessibilityLabel(video.reposted ? "Undo repost" : "Repost this video")
             if !video.isDemo && AppConfig.isConfigured {
                 ShareLink(item: shareURL) {
                     Image(systemName: "square.and.arrow.up").font(.system(size: 27)).foregroundStyle(.white)
                 }.accessibilityLabel("Share video")
             }
-            Button(action: report) {
-                Image(systemName: "ellipsis").font(.system(size: 26, weight: .bold))
+            Menu {
+                Button("Not interested", systemImage: "eye.slash", action: notInterested)
+                Button("Report video", systemImage: "flag", action: report)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(.white)
             }
-            .accessibilityLabel("Report video")
+            .accessibilityLabel("Video options")
         }
         .buttonStyle(.plain)
         .frame(width: 58)
