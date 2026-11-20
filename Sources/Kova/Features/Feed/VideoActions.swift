@@ -1,6 +1,7 @@
 import SwiftUI
 struct VideoActions: View {
     @EnvironmentObject private var session: SessionStore
+    @EnvironmentObject private var remix: KovaRemixCoordinator
     let video: KovaVideo
     let like: () -> Void
     let bookmark: () -> Void
@@ -53,6 +54,15 @@ struct VideoActions: View {
                 }.accessibilityLabel("Share video")
             }
             Menu {
+                if video.allowRemix == true && video.visibility == "public",
+                   session.user != nil && video.status != "rejected" {
+                    Button("Stitch this video", systemImage: "film.stack") {
+                        remix.start(video, kind: "stitch")
+                    }
+                    Button("Duet side by side", systemImage: "rectangle.split.2x1") {
+                        remix.start(video, kind: "duet")
+                    }
+                }
                 Button("Not interested", systemImage: "eye.slash", action: notInterested)
                 Button("Report video", systemImage: "flag", action: report)
             } label: {
