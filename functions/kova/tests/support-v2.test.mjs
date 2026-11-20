@@ -15,7 +15,7 @@ test('staff filters and roles are checked server side',()=>{
  assert.match(src,/Invalid support priority/);
 });
 test('support replies notify ticket owner without exposing their message',()=>{
- assert.match(src,/kind,body\)/);
+ assert.match(src,/kind,body,ticket_id\)/);
  assert.match(src,/support_reply','You have a new reply/);
  assert.match(src,/staffResponse=staff && allowed\[0\]\.author_id!==me.id/);
 });
