@@ -3,11 +3,26 @@ import SwiftUI
 struct KovaProfileHeader: View {
     let profile: KovaUser
     var ownProfile = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topTrailing) {
                 KovaTheme.banner(profile.bannerStyle ?? "ink")
+                if let raw = profile.bannerUrl, let url = URL(string: raw), url.scheme == "https" {
+                    if profile.bannerAnimated == true && !reduceMotion {
+                        KovaAnimatedBanner(url: url)
+                            .accessibilityLabel("Animated profile banner")
+                    } else {
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                Color.clear
+                            }
+                        }
+                    }
+                }
                 Circle()
                     .stroke(.white.opacity(0.18), lineWidth: 1)
                     .frame(width: 215, height: 215)

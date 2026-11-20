@@ -14,6 +14,8 @@ struct KovaUser: Codable, Identifiable {
     var followingCount: Int?
     var isFollowing: Bool?
     var bannerStyle: String?
+    var bannerUrl: String?
+    var bannerAnimated: Bool?
     var pronouns: String?
     var staffTitle: String {
         switch role {
