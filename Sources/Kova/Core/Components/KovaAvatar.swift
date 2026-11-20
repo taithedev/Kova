@@ -22,8 +22,8 @@ struct KovaAvatar: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(preset == nil ? KovaTheme.raised.gradient :
-                    LinearGradient(colors: presetColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(LinearGradient(colors: preset == nil ? [KovaTheme.raised, KovaTheme.panel] : presetColors,
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
             if let url, let source = URL(string: url), source.scheme?.lowercased() == "https" {
                 AsyncImage(url: source, transaction: Transaction(animation: .easeInOut(duration: 0.2))) { phase in
                     if let image = phase.image {

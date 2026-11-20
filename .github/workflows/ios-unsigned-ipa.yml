@@ -19,7 +19,17 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Verify Xcode
+      - name: Select Xcode 26 for native iOS Liquid Glass
+        run: |
+          set -euo pipefail
+          xcode_path=$(find /Applications -maxdepth 1 -type d -name 'Xcode_26*.app' | sort -V | tail -1)
+          if [ -z "$xcode_path" ]; then
+            echo "::error::Xcode 26 required to compile native Liquid Glass UI."
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$xcode_path/Contents/Developer" >> "$GITHUB_ENV"
+          echo "Using $xcode_path"
+      - name: Verify iOS 26 SDK
         run: |
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
