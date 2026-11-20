@@ -222,163 +222,14 @@ struct KovaEditorView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 22)
-                            .fill(.black)
-                        if let player {
-                            VideoPlayer(player: player)
-                                .clipShape(RoundedRectangle(cornerRadius: 22))
-                                .saturation(filter == .mono ? 0 : (filter == .vivid ? 1.35 : 1))
-                        } else {
-                            ProgressView()
-                        }
-                        VStack {
-                            Spacer()
-                            if !overlayText.isEmpty || !sticker.isEmpty {
-                                Text(overlayText + " " + sticker)
-                                    .font(.system(size: 21, weight: .heavy))
-                                    .foregroundStyle(Color(uiColor: ink))
-                                    .shadow(color: .black, radius: 5)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 20)
-                                    .padding(.bottom, 35)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-                    .frame(height: 335)
-
-                    HStack(spacing: 12) {
-                        Label("Clip editor", systemImage: "slider.horizontal.3")
-                            .font(.headline)
-                        Spacer()
-                        Text(String(format: "%.1fs / %.1fs", end - start, duration))
-                            .font(.footnote.monospacedDigit())
-                            .foregroundStyle(KovaTheme.muted)
-                    }
-
-                    GroupBox("Trim beginning and end") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Start").font(.caption)
-                                Slider(value: $start,
-                                       in: 0...max(0, end - 1), step: 0.1)
-                                Text(String(format: "%.1f", start))
-                                    .font(.caption.monospacedDigit())
-                                    .frame(width: 40)
-                            }
-                            HStack {
-                                Text("End").font(.caption)
-                                Slider(value: $end,
-                                       in: min(duration, start + 1)...max(1, duration),
-                                       step: 0.1)
-                                Text(String(format: "%.1f", end))
-                                    .font(.caption.monospacedDigit())
-                                    .frame(width: 40)
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("COLOR FILTERS").font(.caption.bold())
-                            .foregroundStyle(KovaTheme.muted)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 9) {
-                                ForEach(KovaVideoFilter.allCases, id: \.self) { option in
-                                    Button(option.rawValue) { filter = option }
-                                        .font(.subheadline.bold())
-                                        .padding(.horizontal, 14).padding(.vertical, 11)
-                                        .background(filter == option ? KovaTheme.accent : KovaTheme.panel,
-                                                    in: Capsule())
-                                }
-                            }
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 11) {
-                        Text("ON-SCREEN TEXT").font(.caption.bold())
-                            .foregroundStyle(KovaTheme.muted)
-                        TextField("Add a title, caption or phrase", text: $overlayText)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($textFocused)
-                            .onChange(of: overlayText) { _, value in
-                                if value.count > 100 { overlayText = String(value.prefix(100)) }
-                            }
-                        HStack {
-                            ForEach(["White", "Yellow", "Blue", "Pink"], id: \.self) { color in
-                                Button(color) { selectedColor = color }
-                                    .font(.caption.bold())
-                                    .padding(.horizontal, 11).padding(.vertical, 8)
-                                    .background(selectedColor == color ? KovaTheme.accent : KovaTheme.panel,
-                                                in: Capsule())
-                            }
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("STICKERS").font(.caption.bold())
-                            .foregroundStyle(KovaTheme.muted)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(stickers, id: \.self) { value in
-                                    Button(value.isEmpty ? "None" : value) { sticker = value }
-                                        .font(.system(size: 24))
-                                        .frame(minWidth: 49, minHeight: 49)
-                                        .background(sticker == value ? KovaTheme.raised : KovaTheme.panel,
-                                                    in: RoundedRectangle(cornerRadius: 12))
-                                }
-                            }
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("SOUND STUDIO").font(.caption.bold())
-                            .foregroundStyle(KovaTheme.muted)
-                        Picker("Soundtrack", selection: $selectedSound) {
-                            ForEach(KovaOriginalSound.allCases) { sound in
-                                Text(sound.rawValue).tag(sound)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        Button {
-                            importSound = true
-                        } label: {
-                            Label("Import a sound I own", systemImage: "waveform.badge.plus")
-                        }
-                        .buttonStyle(.bordered)
-                        if let importedSoundTitle {
-                            Text("Selected file: " + importedSoundTitle)
-                                .font(.footnote).foregroundStyle(KovaTheme.muted)
-                            Button("Use an original Kova sound instead") {
-                                importedSoundTitle = nil
-                                importedSoundURL = nil
-                            }
-                            .font(.caption)
-                        }
-                        Text("Original Kova loops are generated locally. Only import audio you created or have permission to use.")
-                            .font(.footnote).foregroundStyle(KovaTheme.muted)
-                    }
-                    Toggle(isOn: $mute) {
-                        Label("Remove original video audio", systemImage: "speaker.slash")
-                    }
-                    .tint(KovaTheme.accent)
-                    Text("Effects, text and stickers are permanently rendered into the exported video. Your original recording is kept unchanged.")
-                        .font(.footnote).foregroundStyle(KovaTheme.muted)
-                    if let errorMessage {
-                        Text(errorMessage).font(.footnote).foregroundStyle(.red)
-                    }
-                    Button {
-                        Task { await finish() }
-                    } label: {
-                        HStack {
-                            Spacer()
-                            if busy { ProgressView().padding(.trailing, 10) }
-                            Label(busy ? "Rendering video…" : "Apply edits", systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 16, weight: .bold))
-                            Spacer()
-                        }
-                        .padding(9)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(KovaTheme.accent)
-                    .disabled(busy || end - start < 1)
+                    previewPanel
+                    videoMetrics
+                    trimControls
+                    filterControls
+                    captionControls
+                    stickerControls
+                    soundControls
+                    exportControls
                 }
                 .padding(17)
             }
@@ -423,6 +274,184 @@ struct KovaEditorView: View {
         }
     }
 
+
+    private var previewPanel: some View {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 22)
+                            .fill(.black)
+                        if let player {
+                            VideoPlayer(player: player)
+                                .clipShape(RoundedRectangle(cornerRadius: 22))
+                                .saturation(filter == .mono ? 0 : (filter == .vivid ? 1.35 : 1))
+                        } else {
+                            ProgressView()
+                        }
+                        VStack {
+                            Spacer()
+                            if !overlayText.isEmpty || !sticker.isEmpty {
+                                Text(overlayText + " " + sticker)
+                                    .font(.system(size: 21, weight: .heavy))
+                                    .foregroundStyle(Color(uiColor: ink))
+                                    .shadow(color: .black, radius: 5)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 20)
+                                    .padding(.bottom, 35)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    }
+                    .frame(height: 335)
+    }
+
+    private var videoMetrics: some View {
+                    HStack(spacing: 12) {
+                        Label("Clip editor", systemImage: "slider.horizontal.3")
+                            .font(.headline)
+                        Spacer()
+                        Text(String(format: "%.1fs / %.1fs", end - start, duration))
+                            .font(.footnote.monospacedDigit())
+                            .foregroundStyle(KovaTheme.muted)
+                    }
+    }
+
+    private var trimControls: some View {
+                    GroupBox("Trim beginning and end") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Start").font(.caption)
+                                Slider(value: $start,
+                                       in: 0...max(0, end - 1), step: 0.1)
+                                Text(String(format: "%.1f", start))
+                                    .font(.caption.monospacedDigit())
+                                    .frame(width: 40)
+                            }
+                            HStack {
+                                Text("End").font(.caption)
+                                Slider(value: $end,
+                                       in: min(duration, start + 1)...max(1, duration),
+                                       step: 0.1)
+                                Text(String(format: "%.1f", end))
+                                    .font(.caption.monospacedDigit())
+                                    .frame(width: 40)
+                            }
+                        }
+                    }
+    }
+
+    private var filterControls: some View {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("COLOR FILTERS").font(.caption.bold())
+                            .foregroundStyle(KovaTheme.muted)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 9) {
+                                ForEach(KovaVideoFilter.allCases, id: \.self) { option in
+                                    Button(option.rawValue) { filter = option }
+                                        .font(.subheadline.bold())
+                                        .padding(.horizontal, 14).padding(.vertical, 11)
+                                        .background(filter == option ? KovaTheme.accent : KovaTheme.panel,
+                                                    in: Capsule())
+                                }
+                            }
+                        }
+                    }
+    }
+
+    private var captionControls: some View {
+                    VStack(alignment: .leading, spacing: 11) {
+                        Text("ON-SCREEN TEXT").font(.caption.bold())
+                            .foregroundStyle(KovaTheme.muted)
+                        TextField("Add a title, caption or phrase", text: $overlayText)
+                            .textFieldStyle(.roundedBorder)
+                            .focused($textFocused)
+                            .onChange(of: overlayText) { _, value in
+                                if value.count > 100 { overlayText = String(value.prefix(100)) }
+                            }
+                        HStack {
+                            ForEach(["White", "Yellow", "Blue", "Pink"], id: \.self) { color in
+                                Button(color) { selectedColor = color }
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 11).padding(.vertical, 8)
+                                    .background(selectedColor == color ? KovaTheme.accent : KovaTheme.panel,
+                                                in: Capsule())
+                            }
+                        }
+                    }
+    }
+
+    private var stickerControls: some View {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("STICKERS").font(.caption.bold())
+                            .foregroundStyle(KovaTheme.muted)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(stickers, id: \.self) { value in
+                                    Button(value.isEmpty ? "None" : value) { sticker = value }
+                                        .font(.system(size: 24))
+                                        .frame(minWidth: 49, minHeight: 49)
+                                        .background(sticker == value ? KovaTheme.raised : KovaTheme.panel,
+                                                    in: RoundedRectangle(cornerRadius: 12))
+                                }
+                            }
+                        }
+                    }
+    }
+
+    private var soundControls: some View {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("SOUND STUDIO").font(.caption.bold())
+                            .foregroundStyle(KovaTheme.muted)
+                        Picker("Soundtrack", selection: $selectedSound) {
+                            ForEach(KovaOriginalSound.allCases) { sound in
+                                Text(sound.rawValue).tag(sound)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Button {
+                            importSound = true
+                        } label: {
+                            Label("Import a sound I own", systemImage: "waveform.badge.plus")
+                        }
+                        .buttonStyle(.bordered)
+                        if let importedSoundTitle {
+                            Text("Selected file: " + importedSoundTitle)
+                                .font(.footnote).foregroundStyle(KovaTheme.muted)
+                            Button("Use an original Kova sound instead") {
+                                importedSoundTitle = nil
+                                importedSoundURL = nil
+                            }
+                            .font(.caption)
+                        }
+                        Text("Original Kova loops are generated locally. Only import audio you created or have permission to use.")
+                            .font(.footnote).foregroundStyle(KovaTheme.muted)
+                    }
+    }
+
+    private var exportControls: some View {
+                    Toggle(isOn: $mute) {
+                        Label("Remove original video audio", systemImage: "speaker.slash")
+                    }
+                    .tint(KovaTheme.accent)
+                    Text("Effects, text and stickers are permanently rendered into the exported video. Your original recording is kept unchanged.")
+                        .font(.footnote).foregroundStyle(KovaTheme.muted)
+                    if let errorMessage {
+                        Text(errorMessage).font(.footnote).foregroundStyle(.red)
+                    }
+                    Button {
+                        Task { await finish() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if busy { ProgressView().padding(.trailing, 10) }
+                            Label(busy ? "Rendering video…" : "Apply edits", systemImage: "checkmark.circle.fill")
+                                .font(.system(size: 16, weight: .bold))
+                            Spacer()
+                        }
+                        .padding(9)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(KovaTheme.accent)
+                    .disabled(busy || end - start < 1)
+    }
     private func prepare() async {
         filter = input.initialFilter
         let asset = AVURLAsset(url: input.url)
@@ -442,7 +471,9 @@ struct KovaEditorView: View {
         defer { busy = false }
         player?.pause()
         do {
-            let musicURL = importedSoundURL ?? selectedSound.makeAudioURL()
+            let musicURL: URL?
+            if let imported = importedSoundURL { musicURL = imported }
+            else { musicURL = try selectedSound.makeAudioURL() }
             let soundCredit = importedSoundTitle.map { "User sound · " + $0 } ?? selectedSound.credit
             let options = KovaVideoExporter.Options(
                 start: start, end: end, filter: filter,
