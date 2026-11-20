@@ -67,7 +67,7 @@ struct VideoCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VideoActions(video: video, like: like, bookmark: bookmark, comment: comment, report: report, follow: follow,
-                             repost: repost, notInterested: notInterested, openProfile: openProfile)
+                             openProfile: openProfile, repost: repost, notInterested: notInterested)
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 20)
