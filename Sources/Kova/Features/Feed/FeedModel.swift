@@ -5,9 +5,14 @@ import Foundation
     @Published var errorMessage:String?
     @Published var mode="for-you"
     private var cursor:String?
+    var hasMore:Bool { cursor != nil }
+    func loadMore(api:APIClient,preview:Bool) async {
+        guard !isLoading && !preview && cursor != nil else {return}
+        await load(api:api,preview:false,reset:false)
+    }
     func load(api:APIClient,preview:Bool,reset:Bool=true) async {
         if isLoading {return};isLoading=true;defer{isLoading=false}
-        if reset {videos=[];cursor=nil}
+        if reset {videos=[];cursor=nil;errorMessage=nil}
         if preview {videos=DemoVideos.samples;return}
         do {
             var path="/api/feed?mode=\(mode)"

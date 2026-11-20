@@ -11,7 +11,12 @@ struct FeedView:View {
             ZStack(alignment:.top) {
                 KovaTheme.background.ignoresSafeArea()
                 if model.videos.isEmpty && model.isLoading {LoadingPanel(label:"Opening Kova")} else if model.videos.isEmpty {
-                    EmptyState(icon:"play.square.stack",title:"No videos yet",detail:session.isPreviewing ? "Explore the Kova preview first." : "Approved videos appear here. Be the first to create one!")
+                    VStack(spacing:16) {
+                        EmptyState(icon:"play.square.stack",title:"No published videos yet",detail:session.isPreviewing ? "Preview clips are sample cards." : "Your feed will show approved videos from Kova creators.")
+                        Button("Refresh feed") {
+                            Task { await model.load(api:session.api,preview:session.isPreviewing) }
+                        }.font(.system(size:14,weight:.semibold)).foregroundStyle(.white)
+                    }
                 } else {
                     ScrollView(.vertical) {
                         LazyVStack(spacing:0) {
@@ -29,10 +34,19 @@ struct FeedView:View {
                                     }})
                                     .frame(width:geo.size.width,height:geo.size.height)
                                     .id(video.id)
+                                    .onAppear {
+                                        if idx >= model.videos.count - 2 {
+                                            Task { await model.loadMore(api:session.api,preview:session.isPreviewing) }
+                                        }
+                                    }
                             }
                         }.scrollTargetLayout()
                     }
                     .scrollIndicators(.hidden).scrollTargetBehavior(.paging).scrollPosition(id:$activeID)
+                    .refreshable {
+                        activeID=nil
+                        await model.load(api:session.api,preview:session.isPreviewing)
+                    }
                     .onAppear{if activeID == nil {activeID=model.videos.first?.id}}
                     .onChange(of:model.videos.count){_,_ in if activeID == nil {activeID=model.videos.first?.id}}
                 }
