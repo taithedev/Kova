@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct EditProfileView: View {
     @EnvironmentObject private var session: SessionStore
@@ -12,6 +14,11 @@ struct EditProfileView: View {
     @State private var showPublicWarning = false
     @State private var saving = false
     @State private var message: String?
+    @State private var avatarSelection: PhotosPickerItem?
+    @State private var bannerSelection: PhotosPickerItem?
+    @State private var importAnimatedBanner = false
+    @State private var uploadingMedia = false
+    @State private var uploadedMedia: [ProfileMediaItem] = []
 
     private let bannerOptions = ["ink", "glacier", "orchid", "coral", "mint", "sunset"]
     private let avatarOptions = ["mono", "violet", "ocean", "sunset", "moss", "rose"]
@@ -57,6 +64,10 @@ struct EditProfileView: View {
                     }
                     .padding(.vertical, 9)
                 }
+                PhotosPicker(selection: $avatarSelection, matching: .images) {
+                    Label("Upload a profile photo", systemImage: "photo.badge.plus")
+                }
+                .disabled(uploadingMedia)
                 DisclosureGroup("Use an HTTPS profile photo link") {
                     TextField("https://example.com/photo.jpg", text: $avatarURL)
                         .textInputAutocapitalization(.never)
@@ -95,6 +106,36 @@ struct EditProfileView: View {
                 }
                 .padding(.vertical, 7)
             }
+            Section("CUSTOM BANNERS") {
+                PhotosPicker(selection: $bannerSelection, matching: .images) {
+                    Label("Upload a banner image", systemImage: "photo.on.rectangle.angled")
+                }
+                .disabled(uploadingMedia)
+                Button {
+                    importAnimatedBanner = true
+                } label: {
+                    Label("Upload animated GIF banner", systemImage: "play.rectangle")
+                }
+                .disabled(uploadingMedia || (session.user?.followersCount ?? 0) <= 500)
+                Text((session.user?.followersCount ?? 0) > 500 ?
+                     "Animated GIF banners unlocked. Maximum 15 MB." :
+                     "Animated GIF banners unlock above 500 real, accepted followers.")
+                    .font(.footnote)
+                    .foregroundStyle(KovaTheme.muted)
+                Text("Uploaded photos and GIFs appear on your profile after staff review.")
+                    .font(.footnote)
+                    .foregroundStyle(KovaTheme.muted)
+                if uploadingMedia {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Uploading to Kova…").font(.footnote)
+                    }
+                }
+                ForEach(uploadedMedia.prefix(5)) { media in
+                    LabeledContent(media.kind.capitalized, value: media.status.capitalized)
+                        .font(.footnote)
+                }
+            }
             Section("PRIVACY") {
                 Toggle("Private account", isOn: $isPrivate)
                     .tint(KovaTheme.foreground)
@@ -122,6 +163,22 @@ struct EditProfileView: View {
         .background(KovaTheme.background)
         .navigationTitle("Edit profile")
         .onAppear { loadDraft() }
+        .task { await loadMedia() }
+        .onChange(of: avatarSelection) { _, selection in
+            if let selection { Task { await uploadPhoto(selection, kind: "avatar") } }
+        }
+        .onChange(of: bannerSelection) { _, selection in
+            if let selection { Task { await uploadPhoto(selection, kind: "banner") } }
+        }
+        .fileImporter(isPresented: $importAnimatedBanner, allowedContentTypes: [.gif]) { picked in
+            do {
+                let url = try picked.get()
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let bytes = try Data(contentsOf: url)
+                Task { await upload(bytes, kind: "banner", mime: "image/gif") }
+            } catch { message = error.localizedDescription }
+        }
         .confirmationDialog("Make your profile public?", isPresented: $showPublicWarning) {
             Button("Keep my profile public") { isPrivate = false }
             Button("Keep private", role: .cancel) { isPrivate = true }
@@ -143,6 +200,38 @@ struct EditProfileView: View {
             avatarPreset = "mono"
             avatarURL = user.avatarUrl ?? ""
         }
+    }
+
+    private func loadMedia() async {
+        do {
+            let page: ProfileMediaPage = try await session.api.request("/api/profile/media/mine")
+            uploadedMedia = page.items
+        } catch {
+            // Existing preset avatar and banner editing remains available.
+        }
+    }
+
+    private func uploadPhoto(_ selection: PhotosPickerItem, kind: String) async {
+        guard !uploadingMedia else { return }
+        do {
+            guard let data = try await selection.loadTransferable(type: Data.self) else {
+                throw APIError.server("Could not read that photo.")
+            }
+            let jpeg = try ProfileMediaService.jpeg(from: data)
+            await upload(jpeg, kind: kind, mime: "image/jpeg")
+        } catch { message = error.localizedDescription }
+    }
+
+    private func upload(_ data: Data, kind: String, mime: String) async {
+        guard !uploadingMedia else { return }
+        uploadingMedia = true
+        message = nil
+        defer { uploadingMedia = false }
+        do {
+            let result = try await ProfileMediaService.upload(data, kind: kind, mime: mime, api: session.api)
+            message = result.message
+            await loadMedia()
+        } catch { message = error.localizedDescription }
     }
 
     private func save() async {
