@@ -1,4 +1,5 @@
 import Foundation
+
 enum APIError: LocalizedError {
     case notConfigured
     case unauthorized
@@ -6,10 +7,10 @@ enum APIError: LocalizedError {
     case invalidResponse
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "Kova API is not connected. Set AppConfig.apiBaseURL to your deployed API URL."
-        case .unauthorized: return "Your session expired. Sign in again."
+        case .notConfigured: return "Kova couldn't connect to its account service."
+        case .unauthorized: return "Your session has expired. Sign in again."
         case .server(let message): return message
-        case .invalidResponse: return "The server returned an unexpected response."
+        case .invalidResponse: return "Kova received an unexpected response. Try again."
         }
     }
 }
