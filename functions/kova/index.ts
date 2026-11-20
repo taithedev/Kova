@@ -686,64 +686,125 @@ async function staffMedia(req,id){
  VALUES(${me.id},'media_'+b.status,'profile_media',${id})`;
  return json({id,status:row.status});
 }
+// Support v2: stored threads, unread state, priority, history, and auditable staff actions.
+async function ticketEvent(ticketId,actorId,eventType,details={}){
+ await db()`INSERT INTO support_ticket_events(ticket_id,actor_id,event_type,details)
+ VALUES(${ticketId},${actorId},${eventType},${JSON.stringify(details)}::jsonb)`;
+}
 async function tickets(req,tid){
  const me=await viewer(req),staff=allStaff.includes(me.role);
  if(!tid){
   if(req.method==='GET'){
-   const rows=await db()`SELECT id,subject,category,status,created_at,updated_at FROM support_tickets
-   WHERE author_id=${me.id} ORDER BY updated_at DESC LIMIT 50`;
-   return json({items:rows});
+   const rows=await db()`SELECT id,subject,category,status,priority,created_at,updated_at,
+    (last_staff_reply_at IS NOT NULL AND (last_user_read_at IS NULL OR last_staff_reply_at>last_user_read_at)) AS unread
+    FROM support_tickets WHERE author_id=${me.id}
+    ORDER BY CASE WHEN status IN ('open','in_progress') THEN 0 ELSE 1 END,updated_at DESC LIMIT 100`;
+   return json({items:rows,open:rows.filter(r=>r.status==='open'||r.status==='in_progress').length,
+    unread:rows.filter(r=>r.unread).length});
   }
-  await throttle(req,'support_create',6,60);
-  const b=await parseBody(req),subject=String(b.subject||'').trim(),body=String(b.message||'').trim(),category=String(b.category||'other');
-  if(subject.length<5||subject.length>100||body.length<10||body.length>2000)throw new AppError(400,'Provide a subject and message');
+  await throttle(req,'support_create',5,60);
+  const b=await parseBody(req);
+  const subject=String(b.subject||'').trim(),body=String(b.message||'').trim(),category=String(b.category||'other');
+  if(subject.length<5||subject.length>100||body.length<10||body.length>2000)throw new AppError(400,'Use a subject of 5–100 characters and a message of 10–2000 characters');
   if(!['account','technical','safety','other'].includes(category))throw new AppError(400,'Invalid support category');
+  const priority=category==='safety'?'high':'normal';
   const rows=await db()`WITH created AS (
-   INSERT INTO support_tickets(author_id,subject,category) VALUES(${me.id},${subject},${category}) RETURNING id
-  )
-  INSERT INTO support_ticket_messages(ticket_id,author_id,body,is_staff)
-  SELECT id,${me.id},${body},false FROM created RETURNING ticket_id AS id`;
+    INSERT INTO support_tickets(author_id,subject,category,priority,last_user_reply_at)
+    VALUES(${me.id},${subject},${category},${priority},now()) RETURNING id
+   )
+   INSERT INTO support_ticket_messages(ticket_id,author_id,body,is_staff)
+   SELECT id,${me.id},${body},false FROM created RETURNING ticket_id AS id`;
+  // Ticket creation and its initial message are atomic.
+  await ticketEvent(rows[0].id,me.id,'created',{category});
   return json({id:rows[0].id,status:'open'},201);
  }
  if(!validUUID(tid))throw new AppError(400,'Invalid ticket');
- const allowed=await db()`SELECT id,author_id,subject,category,status,created_at,updated_at
- FROM support_tickets WHERE id=${tid} AND (author_id=${me.id} OR ${staff}) LIMIT 1`;
+ const allowed=await db()`SELECT id,author_id,subject,category,status,priority,assigned_to,created_at,updated_at,
+   (last_staff_reply_at IS NOT NULL AND (last_user_read_at IS NULL OR last_staff_reply_at>last_user_read_at)) AS unread
+   FROM support_tickets WHERE id=${tid} AND (author_id=${me.id} OR ${staff}) LIMIT 1`;
  if(!allowed.length)throw new AppError(404,'Support ticket not found');
  if(req.method==='GET'){
   const messages=await db()`SELECT m.id,m.body,m.is_staff,m.created_at,p.display_name
-  FROM support_ticket_messages m JOIN profiles p ON p.id=m.author_id
-  WHERE m.ticket_id=${tid} ORDER BY m.created_at LIMIT 150`;
-  return json({ticket:allowed[0],messages});
+   FROM support_ticket_messages m JOIN profiles p ON p.id=m.author_id
+   WHERE m.ticket_id=${tid} ORDER BY m.created_at LIMIT 250`;
+  const events=await db()`SELECT e.id,e.event_type,e.details,e.created_at FROM support_ticket_events e
+   WHERE e.ticket_id=${tid} ORDER BY e.created_at DESC LIMIT 40`;
+  if(allowed[0].author_id===me.id){
+   await db()`UPDATE support_tickets SET last_user_read_at=now() WHERE id=${tid}`;
+  }else if(staff){
+   await db()`UPDATE support_tickets SET last_staff_read_at=now() WHERE id=${tid}`;
+  }
+  return json({ticket:{...allowed[0],unread:false},messages,
+   events:events.map(e=>({...e,id:Number(e.id)}))});
  }
- if(allowed[0].status==='closed')throw new AppError(403,'This ticket is closed');
- const b=await parseBody(req),body=String(b.message||'').trim();
- if(body.length<1||body.length>2000)throw new AppError(400,'Message must be 1–2000 characters');
+ if(allowed[0].status==='closed')throw new AppError(403,'Ticket is closed. Start a new ticket for more help.');
  await throttle(req,'support_reply',25,60);
+ const b=await parseBody(req),body=String(b.message||'').trim();
+ if(body.length<1||body.length>2000)throw new AppError(400,'Reply must be 1–2000 characters');
+ // Prevent staff-role users creating staff-labeled replies in their own user ticket.
+ const staffResponse=staff && allowed[0].author_id!==me.id;
  await db()`INSERT INTO support_ticket_messages(ticket_id,author_id,body,is_staff)
- VALUES(${tid},${me.id},${body},${staff})`;
- await db()`UPDATE support_tickets SET status=CASE WHEN ${staff} THEN 'in_progress'
- ELSE CASE WHEN status='resolved' THEN 'open' ELSE status END END,updated_at=now()
- WHERE id=${tid}`;
+ VALUES(${tid},${me.id},${body},${staffResponse})`;
+ const reopened=!staffResponse && allowed[0].status==='resolved';
+ await db()`UPDATE support_tickets SET
+ status=CASE WHEN ${staffResponse} THEN 'in_progress'
+   WHEN status='resolved' THEN 'open' ELSE status END,
+ last_staff_reply_at=CASE WHEN ${staffResponse} THEN now() ELSE last_staff_reply_at END,
+ last_user_reply_at=CASE WHEN ${staffResponse} THEN last_user_reply_at ELSE now() END,
+ updated_at=now() WHERE id=${tid}`;
+ if(staffResponse){
+  await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
+  VALUES(${allowed[0].author_id},${me.id},'support_reply','You have a new reply on your support ticket.')`;
+ }
+ if(reopened)await ticketEvent(tid,me.id,'reopened',{});
  return json({ok:true},201);
 }
-async function staffTickets(req,id){
+async function staffTickets(req,id,operation='status'){
  const me=await viewer(req);
  if(!allStaff.includes(me.role))throw new AppError(403,'Staff access required');
  if(!id){
-  const rows=await db()`SELECT t.id,t.subject,t.category,t.status,t.created_at,t.updated_at,p.handle
-  FROM support_tickets t JOIN profiles p ON p.id=t.author_id
-  ORDER BY CASE WHEN t.status IN ('open','in_progress') THEN 0 ELSE 1 END,t.updated_at DESC LIMIT 100`;
-  return json({items:rows});
+  const url=new URL(req.url);
+  const filter=String(url.searchParams.get('status')||'all');
+  const category=String(url.searchParams.get('category')||'all');
+  if(!['all','open','in_progress','resolved','closed'].includes(filter))throw new AppError(400,'Invalid status filter');
+  if(!['all','account','technical','safety','other'].includes(category))throw new AppError(400,'Invalid category filter');
+  const queryTerm=String(url.searchParams.get('q')||'').trim().slice(0,80);
+  const term='%'+queryTerm+'%';
+  const rows=await db()`SELECT t.id,t.subject,t.category,t.status,t.priority,t.created_at,t.updated_at,p.handle,
+   (t.last_user_reply_at IS NOT NULL AND (t.last_staff_read_at IS NULL OR t.last_user_reply_at>t.last_staff_read_at)) AS unread
+   FROM support_tickets t JOIN profiles p ON p.id=t.author_id
+   WHERE (${filter}='all' OR t.status=${filter})
+     AND (${category}='all' OR t.category=${category})
+     AND (${queryTerm}='' OR t.subject ILIKE ${term} OR p.handle ILIKE ${term})
+   ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
+    CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
+    t.updated_at DESC LIMIT 150`;
+  return json({items:rows,unread:rows.filter(r=>r.unread).length});
  }
  if(!validUUID(id))throw new AppError(400,'Invalid ticket identifier');
  const b=await parseBody(req);
+ if(operation==='priority'){
+  if(!['normal','high','urgent'].includes(b.priority))throw new AppError(400,'Invalid support priority');
+  const found=await db()`UPDATE support_tickets SET priority=${b.priority},updated_at=now()
+   WHERE id=${id} AND priority<>${b.priority} RETURNING id,priority`;
+  if(!found.length)throw new AppError(404,'Ticket missing or priority unchanged');
+  await ticketEvent(id,me.id,'priority_changed',{priority:b.priority});
+  await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
+   VALUES(${me.id},'ticket_priority','support_ticket',${id})`;
+  return json(found[0]);
+ }
  if(!['open','in_progress','resolved','closed'].includes(b.status))throw new AppError(400,'Invalid ticket status');
  const rows=await db()`UPDATE support_tickets SET status=${b.status},updated_at=now(),assigned_to=${me.id}
- WHERE id=${id} RETURNING id,status`;
+ WHERE id=${id} RETURNING id,status,author_id`;
  if(!rows.length)throw new AppError(404,'Ticket not found');
+ await ticketEvent(id,me.id,'status_changed',{status:b.status});
  await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
  VALUES(${me.id},'ticket_'+b.status,'support_ticket',${id})`;
- return json(rows[0]);
+ if(b.status==='resolved'||b.status==='closed'){
+  await db()`INSERT INTO notifications(recipient_id,actor_id,kind,body)
+  VALUES(${rows[0].author_id},${me.id},'support_status','A support ticket has been '+${b.status}+'.')`;
+ }
+ return json({id:rows[0].id,status:rows[0].status});
 }
 
 async function ownerOverview(req){
@@ -772,7 +833,7 @@ async function handle(req){
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
  const method=req.method.toUpperCase();
  if(method==='GET'&&(pathname==='/'||pathname==='/api/health'))
- return json({service:'kova-api',status:'ok',version:'0.5.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
+ return json({service:'kova-api',status:'ok',version:'0.6.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
  if(method==='GET'&&pathname==='/api/health/db'){await db()`SELECT 1`;return json({status:'connected'});}
  if(method==='GET'&&pathname==='/api/auth/username-available'){
   const h=cleanHandle(url.searchParams.get('handle'));if(!validHandle(h))return json({available:false,reason:'invalid'});
@@ -798,6 +859,8 @@ async function handle(req){
  if(method==='GET'&&pathname==='/api/staff/tickets')return staffTickets(req);
  const staffTicket=pathname.match(/^\/api\/staff\/tickets\/([0-9a-f-]{36})$/);
  if(method==='PATCH'&&staffTicket)return staffTickets(req,staffTicket[1]);
+ const staffPriority=pathname.match(/^\/api\/staff\/tickets\/([0-9a-f-]{36})\/priority$/);
+ if(method==='PATCH'&&staffPriority)return staffTickets(req,staffPriority[1],'priority');
  if(method==='GET'&&pathname==='/api/owner/overview')return ownerOverview(req);
  if(method==='GET'&&pathname==='/api/staff/dashboard')return staffDashboard(req);
  if(method==='GET'&&pathname==='/api/staff/users')return staffUsers(req);
