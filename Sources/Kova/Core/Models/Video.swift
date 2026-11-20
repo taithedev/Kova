@@ -23,11 +23,12 @@ struct KovaVideo: Codable, Identifiable, Hashable {
     let description: String?
     let allowRemix: Bool?
     let sourceVideoId: String?
+    let remixType: String?
     var isDemo: Bool = false
     enum CodingKeys: String, CodingKey {
         case id, caption, videoUrl, thumbnailUrl, createdAt, durationSeconds, musicTitle, authorId,
              handle, displayName, avatarUrl, isVerified, likesCount, commentsCount, liked, bookmarked, repostsCount, reposted,
-             status, visibility, description, allowRemix, sourceVideoId
+             status, visibility, description, allowRemix, sourceVideoId, remixType
     }
     static func == (lhs:KovaVideo,rhs:KovaVideo)->Bool {lhs.id==rhs.id && lhs.liked==rhs.liked && lhs.bookmarked==rhs.bookmarked && lhs.reposted==rhs.reposted}
     func hash(into hasher:inout Hasher){hasher.combine(id)}

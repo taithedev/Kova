@@ -10,6 +10,11 @@ struct UploadView: View {
     @State private var editing: KovaEditingInput?
     @State private var pendingRecorded: KovaEditingInput?
     @State private var caption = ""
+    @State private var description = ""
+    @State private var allowRemix = false
+    @State private var musicTitle = "Original audio"
+    @State private var selectedTags: [String] = []
+    @State private var taggedAccount = ""
     @State private var visibility = "private"
     @State private var showCamera = false
     @State private var uploading = false
@@ -104,13 +109,61 @@ struct UploadView: View {
                             .lineLimit(3...6)
                             .padding(15)
                             .background(KovaTheme.panel, in: RoundedRectangle(cornerRadius: 16))
-                            .onChange(of: caption) { _, value in
+                            .onChange(of: description) { _, value in
+                if !accountID.isEmpty {
+                    KovaLocalState.setDraft(value, account: accountID, key: "video.description")
+                }
+            }
+            .onChange(of: caption) { _, value in
                                 if value.count > 2200 { caption = String(value.prefix(2200)) }
                             }
-                        Text("Hashtags help people discover your videos.")
+                        HStack(spacing: 9) {
+                            Button {
+                                if !caption.contains("#") { caption += (caption.isEmpty ? "" : " ") + "#"}
+                            } label: {
+                                Label("Hashtag", systemImage: "number")
+                            }
+                            .buttonStyle(.bordered)
+                            Button {
+                                caption += (caption.isEmpty ? "" : " ") + "@"
+                            } label: {
+                                Label("Mention", systemImage: "at")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .font(.subheadline.bold())
+                        Text("Use #hashtags and @username mentions. Mentioned accounts can receive a notification.")
+                            .font(.footnote).foregroundStyle(KovaTheme.muted)
                             .font(.footnote).foregroundStyle(KovaTheme.muted)
                     }
 
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("VIDEO DESCRIPTION").font(.caption.bold()).tracking(1.2)
+                            Spacer()
+                            Text("\(description.count)/1200")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(KovaTheme.muted)
+                        }
+                        TextField("Add more details, credit sources, mention friends…",
+                                  text: $description, axis: .vertical)
+                            .lineLimit(2...5)
+                            .padding(14)
+                            .background(KovaTheme.panel, in: RoundedRectangle(cornerRadius: 16))
+                            .onChange(of: description) { _, value in
+                                if value.count > 1200 { description = String(value.prefix(1200)) }
+                            }
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("SOUND").font(.caption.bold()).tracking(1.2)
+                        Label(musicTitle, systemImage: "music.note")
+                            .font(.subheadline)
+                            .padding(13)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(KovaTheme.panel, in: RoundedRectangle(cornerRadius: 15))
+                        Text("Use original audio or audio you own or have permission to include. Select sounds in the video editor.")
+                            .font(.footnote).foregroundStyle(KovaTheme.muted)
+                    }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("WHO CAN WATCH?").font(.caption.bold()).tracking(1.2)
                         Picker("Visibility", selection: $visibility) {
@@ -126,6 +179,16 @@ struct UploadView: View {
                         }
                     }
 
+                    Toggle(isOn: $allowRemix) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Allow Stitch and Duet", systemImage: "rectangle.on.rectangle")
+                                .font(.subheadline.bold())
+                            Text("Other creators may use a clip of this public video in their videos.")
+                                .font(.footnote).foregroundStyle(KovaTheme.muted)
+                        }
+                    }
+                    .tint(KovaTheme.accent)
+                    .disabled(visibility != "public")
                     GlassPanel {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: "checkmark.shield")
@@ -207,6 +270,7 @@ struct UploadView: View {
             .task {
                 guard !accountID.isEmpty else { return }
                 caption = KovaLocalState.draft(account: accountID, key: "video.caption")
+                description = KovaLocalState.draft(account: accountID, key: "video.description")
                 let stored = KovaLocalState.draft(account: accountID, key: "video.visibility")
                 if ["public", "followers", "private"].contains(stored) { visibility = stored }
             }
@@ -230,12 +294,17 @@ struct UploadView: View {
         defer { uploading = false }
         do {
             let published = try await UploadService(api: session.api).upload(
-                file: url, caption: caption, visibility: visibility)
+                file: url, caption: caption, description: description,
+                visibility: visibility, musicTitle: musicTitle,
+                allowRemix: allowRemix && visibility == "public")
             message = published.message
             selectedURL = nil
             originalURL = nil
             selected = nil
             caption = ""
+            description = ""
+            musicTitle = "Original audio"
+            allowRemix = false
             visibility = "private"
         } catch {
             message = error.localizedDescription

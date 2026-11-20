@@ -48,7 +48,18 @@ struct VideoCard: View {
                         }
                     }
                     Text(video.caption).font(.system(size: 14, weight: .medium))
-                        .lineLimit(4).fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                    if let description = video.description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.78))
+                            .lineLimit(2)
+                    }
+                    if let type = video.remixType {
+                        Label(type.capitalized + " remix", systemImage: "rectangle.on.rectangle")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
                     Label(video.musicTitle ?? "Original sound", systemImage: "music.note")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.8))
