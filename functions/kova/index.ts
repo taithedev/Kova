@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import { randomBytes, randomUUID, createHash, createHmac } from 'node:crypto';
+import { randomBytes, randomUUID, createHash, createHmac, createCipheriv, createDecipheriv } from 'node:crypto';
 
 class AppError extends Error {
  constructor(status, message){super(message);this.status=status;}
@@ -48,7 +48,7 @@ async function viewer(req,required=true){
  if(!token){if(required)throw new AppError(401,'Please sign in');return null;}
  if(token.length<20||token.length>256)throw new AppError(401,'Session expired');
  const hashed=digest(token);
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,
  s.id AS session_id,s.created_at AS session_created_at,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count
@@ -57,11 +57,17 @@ async function viewer(req,required=true){
  if(!rows.length)throw new AppError(401,'Session expired. Sign in again.');
  return rows[0];
 }
-const publicUser=({session_id,session_created_at,neon_auth_id,internal_auth_email,password_hash,...profile})=>profile;
+const publicUser=({session_id,session_created_at,neon_auth_id,internal_auth_email,password_hash,avatar_key,banner_key,...profile})=>profile;
+async function mediaProfile(row){
+ const profile=publicUser(row);
+ if(row.avatar_key)profile.avatar_url=await presignS3('GET',row.avatar_key,900);
+ if(row.banner_key)profile.banner_url=await presignS3('GET',row.banner_key,900);
+ return profile;
+}
 async function beginSession(user){
  const token=randomBytes(32).toString('base64url');
  await db()`INSERT INTO sessions(user_id,token_hash,expires_at) VALUES(${user.id},${digest(token)},now()+interval '30 days')`;
- return {user:publicUser(user),token};
+ return {user:await mediaProfile(user),token};
 }
 async function betterAuth(action,payload){
  const base=process.env.NEON_AUTH_BASE_URL?.replace(/\/+$/,'');
@@ -110,7 +116,7 @@ async function login(req){
  const handle=cleanHandle(b.handle);
  const password=String(b.password||'');
  if(!validHandle(handle)||!password)throw new AppError(401,'Incorrect username or password');
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.internal_auth_email
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.age_band,COALESCE(pr.role,p.role) AS role,p.is_private,p.allow_messages,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,p.internal_auth_email
  FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id WHERE p.handle=${handle} AND p.disabled_at IS NULL LIMIT 1`;
  if(!rows.length || !rows[0].internal_auth_email)throw new AppError(401,'Incorrect username or password');
  await betterAuth('sign-in/email',{email:rows[0].internal_auth_email,password});
@@ -164,7 +170,11 @@ async function presignS3(method,key,seconds=600){
 }
 async function readVideo(key){return presignS3('GET',key,900);}
 async function signVideoRows(rows){
- return Promise.all(rows.map(async ({video_key,...item})=>({...item,video_url:await readVideo(String(video_key))})));
+ return Promise.all(rows.map(async ({video_key,avatar_key,...item})=>({
+ ...item,
+ video_url:await readVideo(String(video_key)),
+ ...(avatar_key ? {avatar_url:await presignS3('GET',avatar_key,900)} : {})
+ })));
 }
 async function feed(req){
  const u=new URL(req.url);
@@ -197,14 +207,14 @@ async function search(req){
  const person=await viewer(req,false);
  const id=person?.id||'00000000-0000-0000-0000-000000000000';
  const term='%'+q+'%';
- const users=await db()`SELECT p.id,p.handle,p.display_name,p.avatar_url,p.is_verified,COALESCE(pr.role,p.role) AS role FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id
+ const users=await db()`SELECT p.id,p.handle,p.display_name,p.avatar_url,p.avatar_key,p.is_verified,COALESCE(pr.role,p.role) AS role FROM profiles p LEFT JOIN profile_staff_roles pr ON pr.profile_id=p.id
  WHERE (p.handle ILIKE ${term} OR p.display_name ILIKE ${term}) AND p.disabled_at IS NULL
  AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=${id}::uuid AND b.blocked_id=p.id) OR (b.blocker_id=p.id AND b.blocked_id=${id}::uuid))
  ORDER BY handle LIMIT 20`;
  const rows=await db()`SELECT v.id,v.caption,v.video_key,p.handle,p.display_name FROM videos v JOIN profiles p ON p.id=v.author_id
  WHERE v.caption ILIKE ${term} AND v.status='approved' AND v.visibility='public' AND p.is_private=false AND p.disabled_at IS NULL
  ORDER BY v.created_at DESC LIMIT 20`;
- return json({users,videos:await signVideoRows(rows)});
+ return json({users:await Promise.all(users.map(mediaProfile)),videos:await signVideoRows(rows)});
 }
 async function accountStats(req){
  const me=await viewer(req);
@@ -218,7 +228,7 @@ async function accountStats(req){
 }
 async function userMe(req){
  const me=await viewer(req);
- if(req.method==='GET')return json(publicUser(me));
+ if(req.method==='GET')return json(await mediaProfile(me));
  const b=await parseBody(req);
  const name=String(b.display_name||'').trim();
  const bio=String(b.bio||'').trim();
@@ -243,12 +253,12 @@ async function userMe(req){
  avatar_url=${avatar},banner_style=${banner},pronouns=${pronouns},updated_at=now()
  WHERE id=${me.id}
  RETURNING id,handle,display_name,bio,avatar_url,is_verified,age_band,role,is_private,allow_messages,banner_style,pronouns`;
- return json({...result[0],role:me.role});
+ return json(await mediaProfile({...result[0],role:me.role,avatar_key:me.avatar_key,banner_key:me.banner_key,banner_animated:me.banner_animated}));
 }
 async function profile(req,handle){
  const who=await viewer(req,false);
  const id=who?.id||'00000000-0000-0000-0000-000000000000';
- const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.is_private,p.banner_style,p.pronouns,COALESCE(pr.role,p.role) AS role,
+ const rows=await db()`SELECT p.id,p.handle,p.display_name,p.bio,p.avatar_url,p.is_verified,p.is_private,p.banner_style,p.pronouns,p.avatar_key,p.banner_key,p.banner_animated,COALESCE(pr.role,p.role) AS role,
  (SELECT count(*)::int FROM follows f WHERE f.following_id=p.id AND f.status='accepted') AS followers_count,
  (SELECT count(*)::int FROM follows f WHERE f.follower_id=p.id AND f.status='accepted') AS following_count,
  EXISTS(SELECT 1 FROM follows f WHERE f.following_id=p.id AND f.follower_id=${id}::uuid AND f.status='accepted') AS is_following
@@ -261,7 +271,7 @@ async function profile(req,handle){
  WHERE author_id=${p.id} AND status='approved' AND
  (visibility='public' OR author_id=${id}::uuid OR (visibility='followers' AND ${Boolean(p.is_following)}))
  ORDER BY created_at DESC LIMIT 60`:[];
- return json({profile:p,videos:await signVideoRows(videos)});
+ return json({profile:await mediaProfile(p),videos:await signVideoRows(videos)});
 }
 async function follow(req,handle){
  const me=await viewer(req);
@@ -556,12 +566,186 @@ async function staffChange(req,handle,action){
  return json({handle,role});
 }
 
+
+const allStaff=['owner','admin','moderator'];
+const privateContactKey=()=>{
+ const raw=process.env.KOVA_CONTACT_ENCRYPTION_KEY;
+ if(!raw)throw new AppError(503,'Private contact storage is unavailable');
+ const b=Buffer.from(raw,'base64');
+ if(b.length!==32)throw new AppError(503,'Private contact storage is unavailable');
+ return b;
+};
+function encryptContact(value){
+ if(!value)return null;
+ const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',privateContactKey(),iv);
+ const body=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);
+ return Buffer.concat([iv,cipher.getAuthTag(),body]).toString('base64');
+}
+function decryptContact(value){
+ if(!value)return '';
+ const bytes=Buffer.from(value,'base64');
+ const decipher=createDecipheriv('aes-256-gcm',privateContactKey(),bytes.subarray(0,12));
+ decipher.setAuthTag(bytes.subarray(12,28));
+ return Buffer.concat([decipher.update(bytes.subarray(28)),decipher.final()]).toString('utf8');
+}
+async function contacts(req){
+ const me=await viewer(req);
+ if(req.method==='GET'){
+  const result=await db()`SELECT email_encrypted,phone_encrypted,email_verified,phone_verified
+  FROM account_contacts WHERE profile_id=${me.id}`;
+  const row=result[0]||{};
+  return json({email:decryptContact(row.email_encrypted),phone:decryptContact(row.phone_encrypted),
+   email_verified:false,phone_verified:false});
+ }
+ const body=await parseBody(req);
+ const email=String(body.email||'').trim().toLowerCase(),phone=String(body.phone||'').trim();
+ if(email.length>254 || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))throw new AppError(400,'Enter a valid optional email address');
+ if(phone && !/^\+[1-9]\d{7,14}$/.test(phone))throw new AppError(400,'Phone number must use international format, e.g. +15551234567');
+ await db()`INSERT INTO account_contacts(profile_id,email_encrypted,phone_encrypted,email_verified,phone_verified)
+ VALUES(${me.id},${encryptContact(email)},${encryptContact(phone)},false,false)
+ ON CONFLICT(profile_id) DO UPDATE SET email_encrypted=excluded.email_encrypted,
+ phone_encrypted=excluded.phone_encrypted,email_verified=false,phone_verified=false,updated_at=now()`;
+ return json({email,phone,email_verified:false,phone_verified:false});
+}
+async function uploadProfileMedia(req){
+ const me=await viewer(req);
+ await throttle(req,'profile_media',12,60);
+ const body=await parseBody(req),kind=String(body.kind||''),mime=String(body.mime||'');
+ if(!['avatar','banner'].includes(kind))throw new AppError(400,'Invalid profile media');
+ if(!['image/jpeg','image/png','image/webp','image/gif'].includes(mime))throw new AppError(400,'Use JPG, PNG, WebP or GIF images');
+ if(kind==='avatar'&&mime==='image/gif')throw new AppError(400,'Animated avatars are not supported');
+ if(mime==='image/gif'){
+  const count=await db()`SELECT count(*)::int AS n FROM follows WHERE following_id=${me.id} AND status='accepted'`;
+  if(Number(count[0]?.n||0)<=500)throw new AppError(403,'Animated banners unlock after 500 real followers');
+ }
+ const limit=mime==='image/gif'?15000000:6000000;
+ const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'}[mime];
+ const key='profile-media/'+me.id+'/'+randomUUID()+'.'+ext;
+ return json({key,url:await presignS3('PUT',key,600),method:'PUT',mime,max_bytes:limit});
+}
+async function completeProfileMedia(req){
+ const me=await viewer(req);
+ const b=await parseBody(req),kind=String(b.kind||''),key=String(b.key||'');
+ if(!['avatar','banner'].includes(kind)||!key.startsWith('profile-media/'+me.id+'/')||
+    !/^profile-media\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/.test(key))
+    throw new AppError(400,'Invalid upload identifier');
+ const ext=key.split('.').pop();
+ const mime={'jpg':'image/jpeg','png':'image/png','webp':'image/webp','gif':'image/gif'}[ext];
+ if(ext==='gif'&&kind!=='banner')throw new AppError(400,'Only banners can be animated');
+ if(ext==='gif'){
+  const count=await db()`SELECT count(*)::int AS n FROM follows WHERE following_id=${me.id} AND status='accepted'`;
+  if(Number(count[0]?.n||0)<=500)throw new AppError(403,'Animated banners need more than 500 real followers');
+ }
+ const response=await fetch(await presignS3('HEAD',key,200),{method:'HEAD',signal:AbortSignal.timeout(14000)}).catch(()=>null);
+ if(!response?.ok)throw new AppError(400,'The image upload was not found');
+ const bytes=Number(response.headers.get('content-length')||0);
+ if(bytes<1||bytes>(ext==='gif'?15000000:6000000))throw new AppError(400,'Image is too large');
+ const contentType=String(response.headers.get('content-type')||'').split(';')[0].toLowerCase();
+ if(contentType!==mime)throw new AppError(400,'Unexpected image format');
+ const rows=await db()`INSERT INTO profile_media(owner_id,kind,object_key,mime,byte_length,status)
+ VALUES(${me.id},${kind},${key},${mime},${bytes},'pending')
+ ON CONFLICT(object_key) DO NOTHING RETURNING id,status`;
+ if(!rows.length)throw new AppError(409,'This image was already submitted');
+ return json({...rows[0],message:'Image submitted for staff review. It will appear when approved.'},201);
+}
+async function myMedia(req){
+ const me=await viewer(req);
+ const rows=await db()`SELECT id,kind,mime,status,created_at FROM profile_media WHERE owner_id=${me.id} ORDER BY created_at DESC LIMIT 40`;
+ return json({items:rows});
+}
+async function staffMedia(req,id){
+ const me=await viewer(req);
+ if(!allStaff.includes(me.role))throw new AppError(403,'Staff access required');
+ if(!id){
+  const rows=await db()`SELECT m.id,m.kind,m.mime,m.object_key,m.created_at,p.handle
+  FROM profile_media m JOIN profiles p ON p.id=m.owner_id WHERE m.status='pending' ORDER BY m.created_at LIMIT 60`;
+  return json({items:await Promise.all(rows.map(async ({object_key,...row})=>({...row,preview_url:await presignS3('GET',object_key,300)})))});
+ }
+ if(!validUUID(id))throw new AppError(400,'Invalid media identifier');
+ const b=await parseBody(req);
+ if(!['approved','rejected'].includes(b.status))throw new AppError(400,'Invalid decision');
+ const rows=await db()`UPDATE profile_media SET status=${b.status},reviewed_by=${me.id},reviewed_at=now()
+ WHERE id=${id} AND status='pending' RETURNING id,owner_id,kind,mime,object_key,status`;
+ if(!rows.length)throw new AppError(404,'Review item no longer pending');
+ const row=rows[0];
+ if(row.status==='approved'){
+  if(row.kind==='avatar'){
+   await db()`UPDATE profiles SET avatar_key=${row.object_key},updated_at=now() WHERE id=${row.owner_id}`;
+  } else {
+   await db()`UPDATE profiles SET banner_key=${row.object_key},banner_animated=${row.mime==='image/gif'},updated_at=now()
+   WHERE id=${row.owner_id}`;
+  }
+ }
+ await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
+ VALUES(${me.id},'media_'+b.status,'profile_media',${id})`;
+ return json({id,status:row.status});
+}
+async function tickets(req,tid){
+ const me=await viewer(req),staff=allStaff.includes(me.role);
+ if(!tid){
+  if(req.method==='GET'){
+   const rows=await db()`SELECT id,subject,category,status,created_at,updated_at FROM support_tickets
+   WHERE author_id=${me.id} ORDER BY updated_at DESC LIMIT 50`;
+   return json({items:rows});
+  }
+  await throttle(req,'support_create',6,60);
+  const b=await parseBody(req),subject=String(b.subject||'').trim(),body=String(b.message||'').trim(),category=String(b.category||'other');
+  if(subject.length<5||subject.length>100||body.length<10||body.length>2000)throw new AppError(400,'Provide a subject and message');
+  if(!['account','technical','safety','other'].includes(category))throw new AppError(400,'Invalid support category');
+  const rows=await db()`WITH created AS (
+   INSERT INTO support_tickets(author_id,subject,category) VALUES(${me.id},${subject},${category}) RETURNING id
+  )
+  INSERT INTO support_ticket_messages(ticket_id,author_id,body,is_staff)
+  SELECT id,${me.id},${body},false FROM created RETURNING ticket_id AS id`;
+  return json({id:rows[0].id,status:'open'},201);
+ }
+ if(!validUUID(tid))throw new AppError(400,'Invalid ticket');
+ const allowed=await db()`SELECT id,author_id,subject,category,status,created_at,updated_at
+ FROM support_tickets WHERE id=${tid} AND (author_id=${me.id} OR ${staff}) LIMIT 1`;
+ if(!allowed.length)throw new AppError(404,'Support ticket not found');
+ if(req.method==='GET'){
+  const messages=await db()`SELECT m.id,m.body,m.is_staff,m.created_at,p.display_name
+  FROM support_ticket_messages m JOIN profiles p ON p.id=m.author_id
+  WHERE m.ticket_id=${tid} ORDER BY m.created_at LIMIT 150`;
+  return json({ticket:allowed[0],messages});
+ }
+ if(allowed[0].status==='closed')throw new AppError(403,'This ticket is closed');
+ const b=await parseBody(req),body=String(b.message||'').trim();
+ if(body.length<1||body.length>2000)throw new AppError(400,'Message must be 1–2000 characters');
+ await throttle(req,'support_reply',25,60);
+ await db()`INSERT INTO support_ticket_messages(ticket_id,author_id,body,is_staff)
+ VALUES(${tid},${me.id},${body},${staff})`;
+ await db()`UPDATE support_tickets SET status=CASE WHEN ${staff} THEN 'in_progress'
+ ELSE CASE WHEN status='resolved' THEN 'open' ELSE status END END,updated_at=now()
+ WHERE id=${tid}`;
+ return json({ok:true},201);
+}
+async function staffTickets(req,id){
+ const me=await viewer(req);
+ if(!allStaff.includes(me.role))throw new AppError(403,'Staff access required');
+ if(!id){
+  const rows=await db()`SELECT t.id,t.subject,t.category,t.status,t.created_at,t.updated_at,p.handle
+  FROM support_tickets t JOIN profiles p ON p.id=t.author_id
+  ORDER BY CASE WHEN t.status IN ('open','in_progress') THEN 0 ELSE 1 END,t.updated_at DESC LIMIT 100`;
+  return json({items:rows});
+ }
+ if(!validUUID(id))throw new AppError(400,'Invalid ticket identifier');
+ const b=await parseBody(req);
+ if(!['open','in_progress','resolved','closed'].includes(b.status))throw new AppError(400,'Invalid ticket status');
+ const rows=await db()`UPDATE support_tickets SET status=${b.status},updated_at=now(),assigned_to=${me.id}
+ WHERE id=${id} RETURNING id,status`;
+ if(!rows.length)throw new AppError(404,'Ticket not found');
+ await db()`INSERT INTO staff_action_events(actor_id,action,subject_type,subject_id)
+ VALUES(${me.id},'ticket_'+b.status,'support_ticket',${id})`;
+ return json(rows[0]);
+}
+
 async function handle(req){
  const url=new URL(req.url);
  const pathname=url.pathname.replace(/\/+$/,'')||'/';
  const method=req.method.toUpperCase();
  if(method==='GET'&&(pathname==='/'||pathname==='/api/health'))
- return json({service:'kova-api',status:'ok',version:'0.4.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
+ return json({service:'kova-api',status:'ok',version:'0.5.0',account_provider:'Neon Managed Better Auth',storage_ready:Boolean((process.env.AWS_ACCESS_KEY_ID||process.env.S3_ACCESS_KEY_ID)&&(process.env.AWS_SECRET_ACCESS_KEY||process.env.S3_SECRET_ACCESS_KEY)&&(process.env.AWS_ENDPOINT_URL_S3||process.env.S3_ENDPOINT))});
  if(method==='GET'&&pathname==='/api/health/db'){await db()`SELECT 1`;return json({status:'connected'});}
  if(method==='GET'&&pathname==='/api/auth/username-available'){
   const h=cleanHandle(url.searchParams.get('handle'));if(!validHandle(h))return json({available:false,reason:'invalid'});
@@ -570,10 +754,23 @@ async function handle(req){
  }
  if(method==='POST'&&pathname==='/api/auth/register')return register(req);
  if(method==='POST'&&pathname==='/api/auth/login')return login(req);
- if(method==='GET'&&pathname==='/api/auth/me')return json(publicUser(await viewer(req)));
+ if(method==='GET'&&pathname==='/api/auth/me')return json(await mediaProfile(await viewer(req)));
  if(method==='POST'&&pathname==='/api/auth/logout')return logout(req);
  if(method==='GET'&&pathname==='/api/auth/sessions')return recentAccounts(req);
  if(method==='POST'&&pathname==='/api/auth/sessions/revoke-others')return revokeOthers(req);
+ if((method==='GET'||method==='PATCH')&&pathname==='/api/account/contact')return contacts(req);
+ if(method==='POST'&&pathname==='/api/profile/media/upload-url')return uploadProfileMedia(req);
+ if(method==='POST'&&pathname==='/api/profile/media/complete')return completeProfileMedia(req);
+ if(method==='GET'&&pathname==='/api/profile/media/mine')return myMedia(req);
+ if(method==='GET'&&pathname==='/api/staff/media')return staffMedia(req);
+ const mediaRoute=pathname.match(/^\/api\/staff\/media\/([0-9a-f-]{36})$/);
+ if(method==='PATCH'&&mediaRoute)return staffMedia(req,mediaRoute[1]);
+ if((method==='GET'||method==='POST')&&pathname==='/api/support/tickets')return tickets(req);
+ const ticketRoute=pathname.match(/^\/api\/support\/tickets\/([0-9a-f-]{36})$/);
+ if(ticketRoute&&(method==='GET'||method==='POST'))return tickets(req,ticketRoute[1]);
+ if(method==='GET'&&pathname==='/api/staff/tickets')return staffTickets(req);
+ const staffTicket=pathname.match(/^\/api\/staff\/tickets\/([0-9a-f-]{36})$/);
+ if(method==='PATCH'&&staffTicket)return staffTickets(req,staffTicket[1]);
  if(method==='GET'&&pathname==='/api/staff/dashboard')return staffDashboard(req);
  if(method==='GET'&&pathname==='/api/staff/users')return staffUsers(req);
  if(method==='GET'&&pathname==='/api/developer/overview')return developerOverview(req);
