@@ -3,6 +3,7 @@ import AVFoundation
 import AVKit
 import CoreImage
 import UIKit
+import UniformTypeIdentifiers
 
 enum KovaVideoFilter: String, CaseIterable {
     case original = "Original"
@@ -36,6 +37,7 @@ enum KovaVideoExporter {
         let sticker: String
         let mute: Bool
         let textColor: UIColor
+        let audioURL: URL?
     }
     static func makeOverlay(options: Options) -> CIImage? {
         let body = ([options.text, options.sticker].filter { !$0.isEmpty }).joined(separator: "  ")
@@ -61,7 +63,53 @@ enum KovaVideoExporter {
 
     static func export(inputURL: URL, options: Options) async throws -> URL {
         let asset = AVURLAsset(url: inputURL)
-        guard let exporter = AVAssetExportSession(asset: asset,
+        var renderedAsset: AVAsset = asset
+        if let audioURL = options.audioURL {
+            let sourceDuration = try await asset.load(.duration)
+            let composition = AVMutableComposition()
+            guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first,
+                  let outputTrack = composition.addMutableTrack(withMediaType: .video,
+                      preferredTrackID: kCMPersistentTrackID_Invalid) else {
+                throw APIError.server("This video has no editable video track.")
+            }
+            try outputTrack.insertTimeRange(
+                CMTimeRange(start: .zero, duration: sourceDuration),
+                of: videoTrack, at: .zero
+            )
+            outputTrack.preferredTransform = try await videoTrack.load(.preferredTransform)
+            if !options.mute,
+               let existingAudio = try await asset.loadTracks(withMediaType: .audio).first,
+               let existingTarget = composition.addMutableTrack(withMediaType: .audio,
+                   preferredTrackID: kCMPersistentTrackID_Invalid) {
+                try existingTarget.insertTimeRange(
+                    CMTimeRange(start: .zero, duration: sourceDuration),
+                    of: existingAudio, at: .zero
+                )
+            }
+            let music = AVURLAsset(url: audioURL)
+            guard let audioTrack = try await music.loadTracks(withMediaType: .audio).first else {
+                throw APIError.server("The selected sound doesn't contain audio.")
+            }
+            let musicDuration = try await music.load(.duration)
+            guard CMTimeCompare(musicDuration, .zero) > 0 else {
+                throw APIError.server("This audio track is empty.")
+            }
+            if let target = composition.addMutableTrack(withMediaType: .audio,
+                              preferredTrackID: kCMPersistentTrackID_Invalid) {
+                var position = CMTime.zero
+                while CMTimeCompare(position, sourceDuration) < 0 {
+                    let left = CMTimeSubtract(sourceDuration, position)
+                    let segment = CMTimeMinimum(left, musicDuration)
+                    try target.insertTimeRange(
+                        CMTimeRange(start: .zero, duration: segment),
+                        of: audioTrack, at: position
+                    )
+                    position = CMTimeAdd(position, segment)
+                }
+            }
+            renderedAsset = composition
+        }
+        guard let exporter = AVAssetExportSession(asset: renderedAsset,
                                                   presetName: AVAssetExportPresetHighestQuality) else {
             throw APIError.server("The selected video cannot be exported.")
         }
@@ -82,7 +130,7 @@ enum KovaVideoExporter {
         let filter = options.filter
         if filter != .original || overlay != nil {
             exporter.videoComposition = AVVideoComposition(
-                asset: asset,
+                asset: renderedAsset,
                 applyingCIFiltersWithHandler: { request in
                     let base = request.sourceImage
                     var output = filter.render(base.clampedToExtent())
@@ -100,7 +148,7 @@ enum KovaVideoExporter {
                 }
             )
         }
-        if options.mute {
+        if options.mute && options.audioURL == nil {
             let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             if let audio = audioTracks.first {
                 let parameters = AVMutableAudioMixInputParameters(track: audio)
@@ -140,7 +188,7 @@ struct KovaEditingInput: Identifiable {
 
 struct KovaEditorView: View {
     let input: KovaEditingInput
-    let onExport: (URL) -> Void
+    let onExport: (URL, String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
@@ -152,6 +200,10 @@ struct KovaEditorView: View {
     @State private var sticker = ""
     @State private var selectedColor = "White"
     @State private var mute = false
+    @State private var selectedSound = KovaOriginalSound.none
+    @State private var importedSoundURL: URL?
+    @State private var importedSoundTitle: String?
+    @State private var importSound = false
     @State private var busy = false
     @State private var errorMessage: String?
     @FocusState private var textFocused: Bool
@@ -276,8 +328,35 @@ struct KovaEditorView: View {
                             }
                         }
                     }
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("SOUND STUDIO").font(.caption.bold())
+                            .foregroundStyle(KovaTheme.muted)
+                        Picker("Soundtrack", selection: $selectedSound) {
+                            ForEach(KovaOriginalSound.allCases) { sound in
+                                Text(sound.rawValue).tag(sound)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Button {
+                            importSound = true
+                        } label: {
+                            Label("Import a sound I own", systemImage: "waveform.badge.plus")
+                        }
+                        .buttonStyle(.bordered)
+                        if let importedSoundTitle {
+                            Text("Selected file: " + importedSoundTitle)
+                                .font(.footnote).foregroundStyle(KovaTheme.muted)
+                            Button("Use an original Kova sound instead") {
+                                importedSoundTitle = nil
+                                importedSoundURL = nil
+                            }
+                            .font(.caption)
+                        }
+                        Text("Original Kova loops are generated locally. Only import audio you created or have permission to use.")
+                            .font(.footnote).foregroundStyle(KovaTheme.muted)
+                    }
                     Toggle(isOn: $mute) {
-                        Label("Remove original audio", systemImage: "speaker.slash")
+                        Label("Remove original video audio", systemImage: "speaker.slash")
                     }
                     .tint(KovaTheme.accent)
                     Text("Effects, text and stickers are permanently rendered into the exported video. Your original recording is kept unchanged.")
@@ -315,6 +394,7 @@ struct KovaEditorView: View {
                     Button("Reset") {
                         start = 0; end = duration; filter = .original
                         overlayText = ""; sticker = ""; mute = false
+                        selectedSound = .none; importedSoundURL = nil; importedSoundTitle = nil
                     }
                     .disabled(busy)
                 }
@@ -322,6 +402,24 @@ struct KovaEditorView: View {
             .task { await prepare() }
             .onDisappear { player?.pause() }
             .onChange(of: mute) { _, value in player?.isMuted = value }
+            .fileImporter(isPresented: $importSound, allowedContentTypes: [.audio]) { result in
+                do {
+                    let url = try result.get()
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                    let bytes = (attributes[.size] as? NSNumber)?.intValue ?? 0
+                    guard bytes > 0 && bytes < 25_000_000 else {
+                        throw APIError.server("Select an audio file smaller than 25 MB.")
+                    }
+                    let imported = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("kova-audio-" + UUID().uuidString)
+                        .appendingPathExtension(url.pathExtension)
+                    try FileManager.default.copyItem(at: url, to: imported)
+                    importedSoundURL = imported
+                    importedSoundTitle = url.deletingPathExtension().lastPathComponent
+                } catch { errorMessage = error.localizedDescription }
+            }
         }
     }
 
@@ -344,13 +442,15 @@ struct KovaEditorView: View {
         defer { busy = false }
         player?.pause()
         do {
+            let musicURL = importedSoundURL ?? selectedSound.makeAudioURL()
+            let soundCredit = importedSoundTitle.map { "User sound · " + $0 } ?? selectedSound.credit
             let options = KovaVideoExporter.Options(
                 start: start, end: end, filter: filter,
                 text: overlayText.trimmingCharacters(in: .whitespacesAndNewlines),
-                sticker: sticker, mute: mute, textColor: ink
+                sticker: sticker, mute: mute, textColor: ink, audioURL: musicURL
             )
             let output = try await KovaVideoExporter.export(inputURL: input.url, options: options)
-            onExport(output)
+            onExport(output, soundCredit)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
